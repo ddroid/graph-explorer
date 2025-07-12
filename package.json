@@ -1,0 +1,31 @@
+{
+  "name": "graph-explorer",
+  "version": "1.0.0",
+  "description": "a hierarchical file tree explorer, but with the ability to not just expand sub entries, but also multiple super entries",
+  "main": "lib/main.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "start": "budo web/boot.js:bundle.js --open --live",
+    "build": "browserify web/boot.js -o bundle.js",
+    "start:act": "budo web/boot.js:bundle.js  --dir ./ --live --open",
+    "build:act": "browserify web/boot.js > bundle.js"
+  },
+  "devDependencies": {
+    "browserify": "^17.0.1",
+    "budo": "^11.8.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddroid/graph-explorer.git"
+  },
+  "keywords": [],
+  "author": "ddroid",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ddroid/graph-explorer/issues"
+  },
+  "homepage": "https://github.com/ddroid/graph-explorer#readme"
+}

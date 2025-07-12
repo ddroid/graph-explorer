@@ -1,0 +1,770 @@
+{
+  "/": {
+    "name": "root",
+    "type": "root",
+    "subs": [
+      "/pins",
+      "/code",
+      "/data",
+      "/tasks"
+    ],
+    "hubs": [
+      null
+    ]
+  },
+  "/pins": {
+    "name": "pins",
+    "type": "folder",
+    "subs": [],
+    "hubs": [
+      "/"
+    ]
+  },
+  "/code": {
+    "name": "code",
+    "type": "folder",
+    "subs": [
+      "/code/playproject_website",
+      "/code/theme_widget",
+      "/code/text_editor"
+    ],
+    "hubs": [
+      "/"
+    ]
+  },
+  "/data": {
+    "name": "data",
+    "type": "folder",
+    "subs": [
+      "/data/themes"
+    ],
+    "hubs": [
+      "/"
+    ]
+  },
+  "/tasks": {
+    "name": "tasks",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget"
+    ],
+    "hubs": [
+      "/"
+    ]
+  },
+  "/code/playproject_website": {
+    "name": "playproject_website",
+    "type": "folder",
+    "subs": [
+      "/code/playproject_website/index.html",
+      "/code/playproject_website/main.js",
+      "/code/playproject_website/styles.css"
+    ],
+    "hubs": [
+      "/code"
+    ]
+  },
+  "/code/playproject_website/index.html": {
+    "name": "index.html",
+    "type": "html-file",
+    "subs": [],
+    "hubs": [
+      "/code/playproject_website"
+    ]
+  },
+  "/code/playproject_website/main.js": {
+    "name": "main.js",
+    "type": "js-file",
+    "subs": [],
+    "hubs": [
+      "/code/playproject_website"
+    ]
+  },
+  "/code/playproject_website/styles.css": {
+    "name": "styles.css",
+    "type": "css-file",
+    "subs": [],
+    "hubs": [
+      "/code/playproject_website"
+    ]
+  },
+  "/code/theme_widget": {
+    "name": "theme_widget",
+    "type": "folder",
+    "subs": [
+      "/code/theme_widget/widget.html",
+      "/code/theme_widget/widget.js",
+      "/code/theme_widget/theme.css"
+    ],
+    "hubs": [
+      "/code"
+    ]
+  },
+  "/code/theme_widget/widget.html": {
+    "name": "widget.html",
+    "type": "html-file",
+    "subs": [],
+    "hubs": [
+      "/code/theme_widget"
+    ]
+  },
+  "/code/theme_widget/widget.js": {
+    "name": "widget.js",
+    "type": "js-file",
+    "subs": [],
+    "hubs": [
+      "/code/theme_widget"
+    ]
+  },
+  "/code/theme_widget/theme.css": {
+    "name": "theme.css",
+    "type": "css-file",
+    "subs": [],
+    "hubs": [
+      "/code/theme_widget"
+    ]
+  },
+  "/code/text_editor": {
+    "name": "text_editor",
+    "type": "folder",
+    "subs": [
+      "/code/text_editor/editor.html",
+      "/code/text_editor/editor.js",
+      "/code/text_editor/editor.css"
+    ],
+    "hubs": [
+      "/code"
+    ]
+  },
+  "/code/text_editor/editor.html": {
+    "name": "editor.html",
+    "type": "html-file",
+    "subs": [],
+    "hubs": [
+      "/code/text_editor"
+    ]
+  },
+  "/code/text_editor/editor.js": {
+    "name": "editor.js",
+    "type": "js-file",
+    "subs": [],
+    "hubs": [
+      "/code/text_editor"
+    ]
+  },
+  "/code/text_editor/editor.css": {
+    "name": "editor.css",
+    "type": "css-file",
+    "subs": [],
+    "hubs": [
+      "/code/text_editor"
+    ]
+  },
+  "/data/themes": {
+    "name": "themes",
+    "type": "folder",
+    "subs": [
+      "/data/themes/fantasy.json",
+      "/data/themes/electro.json",
+      "/data/themes/light.json",
+      "/data/themes/night.json"
+    ],
+    "hubs": [
+      "/data"
+    ]
+  },
+  "/data/themes/fantasy.json": {
+    "name": "fantasy.json",
+    "type": "json-file",
+    "subs": [],
+    "hubs": [
+      "/data/themes"
+    ]
+  },
+  "/data/themes/electro.json": {
+    "name": "electro.json",
+    "type": "json-file",
+    "subs": [],
+    "hubs": [
+      "/data/themes"
+    ]
+  },
+  "/data/themes/light.json": {
+    "name": "light.json",
+    "type": "json-file",
+    "subs": [],
+    "hubs": [
+      "/data/themes"
+    ]
+  },
+  "/data/themes/night.json": {
+    "name": "night.json",
+    "type": "json-file",
+    "subs": [
+      "/data/themes/night.json/page:css",
+      "/data/themes/night.json/page/header:css",
+      "/data/themes/night.json/page/header/menu:css",
+      "/data/themes/night.json/page/projects:css",
+      "/data/themes/night.json/page/footer:css",
+      "/data/themes/night.json/page/footer/socials:css"
+    ],
+    "hubs": [
+      "/data/themes"
+    ]
+  },
+  "/data/themes/night.json/page:css": {
+    "name": "page:css",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/data/themes/night.json"
+    ]
+  },
+  "/data/themes/night.json/page/header:css": {
+    "name": "page/header:css",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/data/themes/night.json"
+    ]
+  },
+  "/data/themes/night.json/page/header/menu:css": {
+    "name": "page/header/menu:css",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/data/themes/night.json/page/header:css"
+    ]
+  },
+  "/data/themes/night.json/page/projects:css": {
+    "name": "page/projects:css",
+    "type": "folder",
+    "subs": [
+      "/data/themes/night.json/page/projects:css/header.css",
+      "/data/themes/night.json/page/projects:css/1.css"
+    ],
+    "hubs": [
+      "/data/themes/night.json"
+    ]
+  },
+  "/data/themes/night.json/page/projects:css/header.css": {
+    "name": "header.css",
+    "type": "css-file",
+    "subs": [],
+    "hubs": [
+      "/data/themes/night.json/page/projects:css"
+    ]
+  },
+  "/data/themes/night.json/page/projects:css/1.css": {
+    "name": "1.css",
+    "type": "css-file",
+    "subs": [],
+    "hubs": [
+      "/data/themes/night.json/page/projects:css"
+    ]
+  },
+  "/data/themes/night.json/page/footer:css": {
+    "name": "page/footer:css",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/data/themes/night.json"
+    ]
+  },
+  "/data/themes/night.json/page/footer/socials:css": {
+    "name": "page/footer/socials:css",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/data/themes/night.json/page/footer:css"
+    ]
+  },
+  "/tasks/0:theme_widget": {
+    "name": "0:theme_widget",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/task.json",
+      "/tasks/0:theme_widget/state",
+      "/tasks/0:theme_widget/theme-widget",
+      "/tasks/0:theme_widget/subs"
+    ],
+    "hubs": [
+      "/tasks"
+    ]
+  },
+  "/tasks/0:theme_widget/task.json": {
+    "name": "task.json",
+    "type": "json-file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget"
+    ]
+  },
+  "/tasks/0:theme_widget/state": {
+    "name": "state",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/state/session.autosave",
+      "/tasks/0:theme_widget/state/undo.history"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget"
+    ]
+  },
+  "/tasks/0:theme_widget/state/session.autosave": {
+    "name": "session.autosave",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/state"
+    ]
+  },
+  "/tasks/0:theme_widget/state/undo.history": {
+    "name": "undo.history",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/state"
+    ]
+  },
+  "/tasks/0:theme_widget/theme-widget": {
+    "name": "theme-widget",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget"
+    ]
+  },
+  "/tasks/0:theme_widget/subs": {
+    "name": "subs",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/1:playproject",
+      "/tasks/0:theme_widget/subs/2:text_editor",
+      "/tasks/0:theme_widget/subs/3:text_editor"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject": {
+    "name": "1:playproject",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/1:playproject/task.json",
+      "/tasks/0:theme_widget/subs/1:playproject/state",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/task.json": {
+    "name": "task.json",
+    "type": "json-file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/state": {
+    "name": "state",
+    "type": "folder",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io": {
+    "name": "playproject-io",
+    "type": "file",
+    "subs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/topnav",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/header",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/supporters",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/footer"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject",
+      "/data/themes/night.json"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/topnav": {
+    "name": "topnav",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/header": {
+    "name": "header",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects": {
+    "name": "projects",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/projects",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/datdot",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/played",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/smartcontract_codes",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/wizardamigos",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/dat_ecosystem",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/data_shell"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/projects": {
+    "name": "projects",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css": {
+    "name": "css",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css/light:page:css",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css/header.css",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css/1.css"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css/light:page:css": {
+    "name": "light:page:css",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css/header.css": {
+    "name": "header.css",
+    "type": "css-file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css/1.css": {
+    "name": "1.css",
+    "type": "css-file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/css"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/datdot": {
+    "name": "datdot",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/played": {
+    "name": "played",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/smartcontract_codes": {
+    "name": "smartcontract_codes",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/wizardamigos": {
+    "name": "wizardamigos",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/dat_ecosystem": {
+    "name": "dat_ecosystem",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects/data_shell": {
+    "name": "data_shell",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/projects"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/supporters": {
+    "name": "supporters",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors": {
+    "name": "our_contributors",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Nina",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Jam",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Mauve",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Fiona",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Toshi",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Ailin",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Kayla",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Tommings",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Santies",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Pepe",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Jannis",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Nora",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Mimi",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Helenphina",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Ali",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Ibrar",
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Cypher"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Nina": {
+    "name": "Nina",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Jam": {
+    "name": "Jam",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Mauve": {
+    "name": "Mauve",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Fiona": {
+    "name": "Fiona",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Toshi": {
+    "name": "Toshi",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Ailin": {
+    "name": "Ailin",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Kayla": {
+    "name": "Kayla",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Tommings": {
+    "name": "Tommings",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Santies": {
+    "name": "Santies",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Pepe": {
+    "name": "Pepe",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Jannis": {
+    "name": "Jannis",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Nora": {
+    "name": "Nora",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Mimi": {
+    "name": "Mimi",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Helenphina": {
+    "name": "Helenphina",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Ali": {
+    "name": "Ali",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Ibrar": {
+    "name": "Ibrar",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors/Cypher": {
+    "name": "Cypher",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io/our_contributors"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/1:playproject/playproject-io/footer": {
+    "name": "footer",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/1:playproject/playproject-io"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/2:text_editor": {
+    "name": "2:text_editor",
+    "type": "folder",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/3:text_editor": {
+    "name": "3:text_editor",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/3:text_editor/task.json",
+      "/tasks/0:theme_widget/subs/3:text_editor/state",
+      "/tasks/0:theme_widget/subs/3:text_editor/editor"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/3:text_editor/task.json": {
+    "name": "task.json",
+    "type": "json-file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/3:text_editor"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/3:text_editor/state": {
+    "name": "state",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/3:text_editor/state/night.json"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/3:text_editor"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/3:text_editor/state/night.json": {
+    "name": "night.json",
+    "type": "json-file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/3:text_editor/state"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/3:text_editor/editor": {
+    "name": "editor",
+    "type": "folder",
+    "subs": [
+      "/tasks/0:theme_widget/subs/3:text_editor/editor/tetxtarea",
+      "/tasks/0:theme_widget/subs/3:text_editor/editor/toolbar"
+    ],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/3:text_editor"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/3:text_editor/editor/tetxtarea": {
+    "name": "tetxtarea",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/3:text_editor/editor"
+    ]
+  },
+  "/tasks/0:theme_widget/subs/3:text_editor/editor/toolbar": {
+    "name": "toolbar",
+    "type": "file",
+    "subs": [],
+    "hubs": [
+      "/tasks/0:theme_widget/subs/3:text_editor/editor"
+    ]
+  }
+}

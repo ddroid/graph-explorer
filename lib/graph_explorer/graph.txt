@@ -1,0 +1,98 @@
+🪄┬🌐/
+  ├─📁pins/
+  ├┬📚code/
+  │├┬📖playproject_website
+  ││├─📄index.html
+  ││├─📄main.js
+  ││└─📄styles.css
+  │├┬📖theme_widget
+  ││├─📄widget.html
+  ││├─📄widget.js
+  ││└─📄theme.css
+  │└┬📖text_editor
+  │ ├─📄editor.html
+  │ ├─📄editor.js
+  │ └─📄editor.css
+  ├┬📁data/
+  ││┌─📁data/
+  │└┼📁themes/
+  │ ├─🎨fantasy.json
+  │ ├─🎨electro.json
+  │ ├─🎨light.json
+  │ │┌─📁themes/
+  │ └┼🎨night.json
+  │  ├─🔗page:css
+  │  ├─🔗page/header:css
+  │  ├─🔗page/header/menu:css
+  │  │┌─📁themes/
+  │  ├┼🔗page/projects:css
+  │  │├─🖌️header.css
+  │  │└─🖌️1.css
+  │  ├─🔗page/footer:css
+  │  └─🔗page/footer/socials:css
+  └┬🗄️tasks/
+   └┬🗃️0:theme_widget/
+    ├┬📄task.json
+    │├─📥night.json
+    │├─📓theme_widget
+    │└─📤night.json
+    ├┬📂state/
+    │├─📄session.autosave
+    │└─📄undo.history 
+    ├─🧩theme-widget 
+    └┬🗄️subs/
+     ├┬🗃️1:playproject
+     │├─📄task.json
+     │├─📁state/
+     ││┌🇹page
+     ││├🎨night.json
+     │└┼🧩playproject-io
+     │ ├─🧩topnav
+     │ ├─🧩header
+     │ ├┬🧩projects
+     │ ││┌─🇹itemcard
+     │ ││├─🧩projects
+     │ ││├┬🔗css
+     │ ││││┌─🔗night:page/header:css
+     │ ││││├─🔗light:page/header:css
+     │ │││├┴🖌️header.css
+     │ │││└─🖌️1.css
+     │ ││├─🔗data
+     │ │├┴🧩datdot
+     │ │├─🧩played
+     │ │├─🧩smartcontract_codes
+     │ │├─🧩wizardamigos
+     │ │├─🧩dat_ecosystem
+     │ │└─🧩data_shell
+     │ ├─🧩supporters
+     │ │┌─🧩page
+     │ ├┼🧩our_contributors
+     │ ││┌─🇹itemcard
+     │ │├┴🧩Nina
+     │ │├─🧩Jam
+     │ │├─🧩Mauve
+     │ │├─🧩Fiona
+     │ │├─🧩Toshi
+     │ │├─🧩Ailin
+     │ │├─🧩Kayla
+     │ │├─🧩Tommings
+     │ │├─🧩Santies
+     │ │├─🧩Pepe
+     │ │├─🧩Jannis
+     │ │├─🧩Nora
+     │ │├─🧩Mimi
+     │ │├─🧩Helenphina
+     │ │├─🧩Ali
+     │ │├─🧩Ibrar
+     │ │└─🧩🔨{Cypher}🆔1
+     │ └─🧩footer
+     ├─🗃️2:text_editor
+     └┬🗃️3:text_editor
+      ├┬📄task.json
+      │└─📓text_editor
+      ├─📂state/
+      │┌🇹page
+      │├🎨night.json
+      └┼🧩editor
+       ├─🧩tetxtarea
+       └─🧩toolbar
