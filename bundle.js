@@ -2,7 +2,7 @@
 
 },{}],2:[function(require,module,exports){
 (function (__filename){(function (){
-const STATE = require('../STATE')
+const STATE = require('./STATE')
 const statedb = STATE(__filename)
 const { get } = statedb(fallback_module)
 
@@ -22,13 +22,14 @@ async function graph_explorer(opts) {
 
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
-  el.onscroll = () => {
-    vertical_scroll_value = el.scrollTop
-    horizontal_scroll_value = el.scrollLeft
-  }
   const shadow = el.attachShadow({ mode: 'closed' })
   shadow.innerHTML = `<div class="graph-container"></div>`
   const container = shadow.querySelector('.graph-container')
+  container.onscroll = () => {
+    vertical_scroll_value = container.scrollTop
+    horizontal_scroll_value = container.scrollLeft
+    console.log('scroll', vertical_scroll_value, horizontal_scroll_value)
+  }
 
   let all_entries = {}
   let view = []
@@ -46,7 +47,7 @@ async function graph_explorer(opts) {
   bottom_sentinel.className = 'sentinel'
 
   const observer = new IntersectionObserver(handle_sentinel_intersection, {
-    root: el,
+    root: container,
     threshold: 0
   })
 
@@ -133,8 +134,8 @@ async function graph_explorer(opts) {
     render_next_chunk()
 
     requestAnimationFrame(() => {
-      el.scrollTop = new_scroll_top
-      el.scrollLeft = old_scroll_left
+      container.scrollTop = new_scroll_top
+      container.scrollLeft = old_scroll_left
     })
   }
 
@@ -264,11 +265,11 @@ async function graph_explorer(opts) {
       fragment.appendChild(create_node(view[i]))
     }
     const old_scroll_height = container.scrollHeight
-    const old_scroll_top = el.scrollTop
+    const old_scroll_top = container.scrollTop
     container.insertBefore(fragment, top_sentinel.nextSibling)
     start_index = prev_start
+    container.scrollTop = old_scroll_top + (container.scrollHeight - old_scroll_height)
     cleanup_dom(true)
-    el.scrollTop = old_scroll_top + (container.scrollHeight - old_scroll_height)
   }
 
   function cleanup_dom(is_scrolling_up) {
@@ -429,8 +430,8 @@ function fallback_module() {
   }
 }
 
-}).call(this)}).call(this,"/lib/graph_explorer/graph_explorer.js")
-},{"../STATE":1}],3:[function(require,module,exports){
+}).call(this)}).call(this,"/lib/graph_explorer.js")
+},{"./STATE":1}],3:[function(require,module,exports){
 const prefix = 'https://raw.githubusercontent.com/alyhxn/playproject/main/'
 const init_url = location.hash === '#dev' ? 'web/init.js' : prefix + 'src/node_modules/init.js'
 const args = arguments
