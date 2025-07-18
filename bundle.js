@@ -14,25 +14,19 @@ async function graph_explorer(opts) {
 
   let vertical_scroll_value = 0
   let horizontal_scroll_value = 0
-
-  const on = {
-    entries: on_entries,
-    style: inject_style
-  }
-
+  let selected_instance_path = null
+  let all_entries = {}
+  let instance_states = {}
+  let view = []
+  
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
   const shadow = el.attachShadow({ mode: 'closed' })
   shadow.innerHTML = `<div class="graph-container"></div>`
   const container = shadow.querySelector('.graph-container')
-  container.onscroll = () => {
-    vertical_scroll_value = container.scrollTop
-    horizontal_scroll_value = container.scrollLeft
-  }
-
-  let all_entries = {}
-  let view = []
-  const instance_states = {}
+  
+  let scroll_update_pending = false
+  container.onscroll = onscroll
 
   let start_index = 0
   let end_index = 0
@@ -42,34 +36,74 @@ async function graph_explorer(opts) {
 
   const top_sentinel = document.createElement('div')
   const bottom_sentinel = document.createElement('div')
-
+  
   const observer = new IntersectionObserver(handle_sentinel_intersection, {
     root: container,
     threshold: 0
   })
-
+  const on = {
+    entries: on_entries,
+    style: inject_style,
+    runtime: on_runtime
+  }
   await sdb.watch(onbatch)
-
+  
   return el
 
   async function onbatch(batch) {
     for (const { type, paths } of batch) {
-      const data = await Promise.all(paths.map(path => drive.get(path).then(file => file.raw)))
+      const data = await Promise.all(paths.map(path => drive.get(path).then(file => file ? file.raw : null)))
       const func = on[type] || fail
-      func(data, type)
+      func(data, type, paths)
     }
   }
 
   function fail (data, type) { throw new Error('invalid message', { cause: { data, type } }) }
 
+  async function update_runtime_state (name, value) {
+    await drive.put(`runtime/${name}.json`, { raw: JSON.stringify(value) })
+  }
+
+  function on_runtime (data, type, paths) {
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i]
+      if (data[i] === null) continue
+      const value = typeof data[i] === 'string' ? JSON.parse(data[i]) : data[i]
+      if (path.endsWith('vertical_scroll_value.json')) {
+        vertical_scroll_value = value
+        container.scrollTop = vertical_scroll_value
+      } else if (path.endsWith('horizontal_scroll_value.json')) {
+        horizontal_scroll_value = value
+        container.scrollLeft = horizontal_scroll_value
+      } else if (path.endsWith('selected_instance_path.json')) {
+        const old_selected_path = selected_instance_path
+        selected_instance_path = value
+        if (old_selected_path) {
+          const old_node = shadow.querySelector(`[data-instance_path="${CSS.escape(old_selected_path)}"]`)
+          if (old_node) old_node.classList.remove('selected')
+        }
+        if (selected_instance_path) {
+          const new_node = shadow.querySelector(`[data-instance_path="${CSS.escape(selected_instance_path)}"]`)
+          if (new_node) new_node.classList.add('selected')
+        }
+      } else if (path.endsWith('instance_states.json')) {
+        instance_states = value
+        build_and_render_view()
+      }
+    }
+  }
+
   function on_entries(data) {
     all_entries = typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
     const root_path = '/'
     if (all_entries[root_path]) {
-      if (!instance_states[root_path]) {
-        instance_states[root_path] = { expanded_subs: true, expanded_hubs: false }
+      const root_instance_path = '|/'
+      if (!instance_states[root_instance_path]) {
+        instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
+        update_runtime_state('instance_states', instance_states)
+      } else {
+        build_and_render_view()
       }
-      build_and_render_view()
     }
   }
 
@@ -78,7 +112,21 @@ async function graph_explorer(opts) {
     sheet.replaceSync(data[0])
     shadow.adoptedStyleSheets = [sheet]
   }
-
+  function onscroll() {
+    if (scroll_update_pending) return
+    scroll_update_pending = true
+    requestAnimationFrame(() => {
+      if (vertical_scroll_value !== container.scrollTop) {
+        vertical_scroll_value = container.scrollTop
+        update_runtime_state('vertical_scroll_value', vertical_scroll_value)
+      }
+      if (horizontal_scroll_value !== container.scrollLeft) {
+        horizontal_scroll_value = container.scrollLeft
+        update_runtime_state('horizontal_scroll_value', horizontal_scroll_value)
+      }
+      scroll_update_pending = false
+    })
+  }
   function build_and_render_view(focal_instance_path = null) {
     const old_view = [...view]
     const old_scroll_top = vertical_scroll_value
@@ -195,7 +243,7 @@ async function graph_explorer(opts) {
           children_pipe_trail.push(false)
         }
       }
-      children_pipe_trail.push(is_hub_on_top || !is_last_sub)
+      children_pipe_trail.push(is_hub || !is_last_sub)
     }
 
     let current_view = []
@@ -333,12 +381,26 @@ async function graph_explorer(opts) {
     }
   }
 
+  function reset() {
+    const root_path = '/'
+    const root_instance_path = '|/'
+    const new_instance_states = {}
+    if (all_entries[root_path]) {
+      new_instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
+    }
+    update_runtime_state('vertical_scroll_value', 0)
+    update_runtime_state('horizontal_scroll_value', 0)
+    update_runtime_state('selected_instance_path', null)
+    update_runtime_state('instance_states', new_instance_states)
+  }
+
   function create_node({ base_path, instance_path, depth, is_last_sub, is_hub, pipe_trail, is_hub_on_top }) {
     const entry = all_entries[base_path]
     const state = instance_states[instance_path]
     const el = document.createElement('div')
     el.className = `node type-${entry.type}`
     el.dataset.instance_path = instance_path
+    if (instance_path === selected_instance_path) el.classList.add('selected')
 
     const has_hubs = entry.hubs && entry.hubs.length > 0
     const has_subs = entry.subs && entry.subs.length > 0
@@ -349,13 +411,14 @@ async function graph_explorer(opts) {
 
     if (base_path === '/' && instance_path === '|/') {
       const { expanded_subs } = state
-      const prefix_symbol = expanded_subs ? '🪄┬' : '🪄─'
+      const prefix_symbol = expanded_subs ? '┬' : '─'
       const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
-      el.innerHTML = `<span class="${prefix_class}">${prefix_symbol}</span><span class="name">/🌐</span>`
+      el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class}">${prefix_symbol}</span><span class="name clickable">/🌐</span>`
+      el.querySelector('.wand').onclick = reset
       if (has_subs) {
         el.querySelector('.prefix').onclick = () => toggle_subs(instance_path)
-        el.querySelector('.name').onclick = () => toggle_subs(instance_path)
       }
+      el.querySelector('.name').onclick = () => select_node(instance_path, base_path)
       return el
     }
 
@@ -369,27 +432,32 @@ async function graph_explorer(opts) {
       <span class="indent">${pipe_html}</span>
       <span class="${prefix_class}">${prefix_symbol}</span>
       <span class="${icon_class}"></span>
-      <span class="name">${entry.name}</span>
+      <span class="name clickable">${entry.name}</span>
     `
     if(has_hubs && base_path !== '/') el.querySelector('.prefix').onclick = () => toggle_hubs(instance_path)
     if(has_subs) el.querySelector('.icon').onclick = () => toggle_subs(instance_path)
+    el.querySelector('.name').onclick = () => select_node(instance_path, base_path)
     return el
+  }
+
+  function select_node(instance_path, base_path) {
+    if (instance_path === selected_instance_path) {
+      console.log(`entry ${base_path} selected again aka confirmed`)
+      return
+    }
+    update_runtime_state('selected_instance_path', instance_path)
   }
 
   function toggle_subs(instance_path) {
     const state = instance_states[instance_path]
-    if (state) {
-      state.expanded_subs = !state.expanded_subs
-      build_and_render_view(instance_path)
-    }
+    state.expanded_subs = !state.expanded_subs
+    update_runtime_state('instance_states', instance_states)
   }
 
   function toggle_hubs(instance_path) {
     const state = instance_states[instance_path]
-    if (state) {
-      state.expanded_hubs = !state.expanded_hubs
-      build_and_render_view(instance_path)
-    }
+    state.expanded_hubs = !state.expanded_hubs
+    update_runtime_state('instance_states', instance_states)
   }
 }
 
@@ -420,6 +488,9 @@ function fallback_module() {
                 cursor: default;
                 height: 22px; /* Important for scroll calculation */
               }
+              .node.selected {
+                background-color: #3a3f4b;
+              }
               .indent {
                 display: flex;
               }
@@ -447,6 +518,12 @@ function fallback_module() {
               .node.type-file > .icon::before { content: '📄'; }
             `
           }
+        },
+        'runtime/': {
+          'vertical_scroll_value.json': { raw: '0' },
+          'horizontal_scroll_value.json': { raw: '0' },
+          'selected_instance_path.json': { raw: 'null' },
+          'instance_states.json': { raw: '{}' }
         }
       }
     }
@@ -484,7 +561,7 @@ const { sdb } = statedb(fallback_module)
 /******************************************************************************
   PAGE
 ******************************************************************************/
-const app = require('../lib/graph_explorer')
+const app = require('..')
 const sheet = new CSSStyleSheet()
 config().then(() => boot({ sid: '' }))
 
@@ -548,12 +625,13 @@ async function inject(data) {
 function fallback_module () {
   return {
     _: {
-      '../lib/graph_explorer': { 
+      '..': { 
         $: '', 
         0: '',
         mapping: {
           'style': 'style',
-          'entries': 'entries'
+          'entries': 'entries',
+          'runtime': 'runtime'
         }
       }
     },
@@ -564,4 +642,4 @@ function fallback_module () {
   }
 }
 }).call(this)}).call(this,"/web/page.js","/web")
-},{"../lib/STATE":1,"../lib/graph_explorer":2}]},{},[3]);
+},{"..":2,"../lib/STATE":1}]},{},[3]);
