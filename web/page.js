@@ -5,7 +5,7 @@ const { sdb } = statedb(fallback_module)
 /******************************************************************************
   PAGE
 ******************************************************************************/
-const app = require('../lib/graph_explorer')
+const app = require('..')
 const sheet = new CSSStyleSheet()
 config().then(() => boot({ sid: '' }))
 
@@ -69,7 +69,7 @@ async function inject(data) {
 function fallback_module () {
   return {
     _: {
-      '../lib/graph_explorer': { 
+      '..': { 
         $: '', 
         0: '',
         mapping: {
