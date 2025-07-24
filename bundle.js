@@ -9,6 +9,10 @@ const { get } = statedb(fallback_module)
 module.exports = graph_explorer
 
 async function graph_explorer(opts) {
+/******************************************************************************
+  1. COMPONENT INITIALIZATION
+    Set up state, variables, DOM, and watchers.
+******************************************************************************/
   const { sdb } = await get(opts.sid)
   const { drive } = sdb
   await drive.list('runtime/').forEach(async path => console.log(path, await drive.get('runtime/' + path)))
@@ -19,12 +23,14 @@ async function graph_explorer(opts) {
   let all_entries = {}
   let instance_states = {}
   let view = []
+  let drive_updated_by_scroll = false
   
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
   const shadow = el.attachShadow({ mode: 'closed' })
   shadow.innerHTML = `<div class="graph-container"></div>`
   const container = shadow.querySelector('.graph-container')
+  document.body.style.margin = 0
   
   let scroll_update_pending = false
   container.onscroll = onscroll
@@ -33,7 +39,7 @@ async function graph_explorer(opts) {
   let end_index = 0
   const chunk_size = 50
   const max_rendered_nodes = chunk_size * 3
-  const node_height = 22
+  const node_height = 19
 
   const top_sentinel = document.createElement('div')
   const bottom_sentinel = document.createElement('div')
@@ -51,7 +57,15 @@ async function graph_explorer(opts) {
   
   return el
 
+/******************************************************************************
+  2. STATE AND DATA HANDLING
+    Functions for processing data from the STATE module.
+******************************************************************************/
   async function onbatch(batch) {
+    if (drive_updated_by_scroll) {
+      drive_updated_by_scroll = false
+      return
+    }
     for (const { type, paths } of batch) {
       const data = await Promise.all(paths.map(path => drive.get(path).then(file => file ? file.raw : null)))
       const func = on[type] || fail
@@ -61,8 +75,17 @@ async function graph_explorer(opts) {
 
   function fail (data, type) { throw new Error('invalid message', { cause: { data, type } }) }
 
-  async function update_runtime_state (name, value) {
-    await drive.put(`runtime/${name}.json`, JSON.stringify(value))
+  function on_entries(data) {
+    all_entries = typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
+    const root_path = '/'
+    if (all_entries[root_path]) {
+      const root_instance_path = '|/'
+      if (!instance_states[root_instance_path]) {
+        instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
+      } else {
+        build_and_render_view()
+      }
+    }
   }
 
   function on_runtime (data, type, paths) {
@@ -89,47 +112,24 @@ async function graph_explorer(opts) {
     }
   }
 
-  function on_entries(data) {
-    all_entries = typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
-    const root_path = '/'
-    if (all_entries[root_path]) {
-      const root_instance_path = '|/'
-      if (!instance_states[root_instance_path]) {
-        instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
-      } else {
-        build_and_render_view()
-      }
-    }
-  }
-
   function inject_style(data) {
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(data[0])
     shadow.adoptedStyleSheets = [sheet]
   }
-  function onscroll() {
-    if (scroll_update_pending) return
-    scroll_update_pending = true
-    requestAnimationFrame(() => {
-      if (vertical_scroll_value !== container.scrollTop) {
-        vertical_scroll_value = container.scrollTop
-        update_runtime_state('vertical_scroll_value', vertical_scroll_value)
-      }
-      if (horizontal_scroll_value !== container.scrollLeft) {
-        horizontal_scroll_value = container.scrollLeft
-        update_runtime_state('horizontal_scroll_value', horizontal_scroll_value)
-      }
-      scroll_update_pending = false
-    })
+
+  async function update_runtime_state (name, value) {
+    await drive.put(`runtime/${name}.json`, JSON.stringify(value))
   }
-  function build_and_render_view(focal_instance_path = null) {
+
+/******************************************************************************
+  3. VIEW AND RENDERING LOGIC
+    Functions for building and rendering the graph view.
+******************************************************************************/
+  function build_and_render_view(focal_instance_path) {
     const old_view = [...view]
     const old_scroll_top = vertical_scroll_value
     const old_scroll_left = horizontal_scroll_value
-
-    const old_focal_index = focal_instance_path
-      ? old_view.findIndex(node => node.instance_path === focal_instance_path)
-      : -1
 
     view = build_view_recursive({
       base_path: '/',
@@ -142,22 +142,24 @@ async function graph_explorer(opts) {
       all_entries
     })
 
-    const new_focal_index = focal_instance_path
-      ? view.findIndex(node => node.instance_path === focal_instance_path)
-      : -1
-
     let new_scroll_top = old_scroll_top
 
-    if (focal_instance_path && old_focal_index !== -1 && new_focal_index !== -1) {
-      const scroll_diff = (new_focal_index - old_focal_index) * node_height
-      new_scroll_top = old_scroll_top + scroll_diff
-    } else {
+    if (focal_instance_path) {
+      const old_toggled_node_index = old_view.findIndex(node => node.instance_path === focal_instance_path)
+      const new_toggled_node_index = view.findIndex(node => node.instance_path === focal_instance_path)
+
+      if (old_toggled_node_index !== -1 && new_toggled_node_index !== -1) {
+        const index_change = new_toggled_node_index - old_toggled_node_index
+        new_scroll_top = old_scroll_top + (index_change * node_height)
+      }
+    } else if (old_view.length > 0) {
       const old_top_node_index = Math.floor(old_scroll_top / node_height)
+      const scroll_offset = old_scroll_top % node_height
       const old_top_node = old_view[old_top_node_index]
       if (old_top_node) {
         const new_top_node_index = view.findIndex(node => node.instance_path === old_top_node.instance_path)
         if (new_top_node_index !== -1) {
-          new_scroll_top = new_top_node_index * node_height
+          new_scroll_top = (new_top_node_index * node_height) + scroll_offset
         }
       }
     }
@@ -289,6 +291,196 @@ async function graph_explorer(opts) {
     }
     return current_view
   }
+  
+  /******************************************************************************
+ 4. NODE CREATION AND GRAPH BUILDING
+   Functions for creating nodes in the graph.
+   ******************************************************************************/
+  
+  function create_node({ base_path, instance_path, depth, is_last_sub, is_hub, pipe_trail, is_hub_on_top }) {
+    const entry = all_entries[base_path]
+    const state = instance_states[instance_path]
+    const el = document.createElement('div')
+    el.className = `node type-${entry.type}`
+    el.dataset.instance_path = instance_path
+    if (selected_instance_paths.includes(instance_path)) el.classList.add('selected')
+    if (confirmed_instance_paths.includes(instance_path)) el.classList.add('confirmed')
+
+    const has_hubs = entry.hubs && entry.hubs.length > 0
+    const has_subs = entry.subs && entry.subs.length > 0
+    
+    if (depth) {
+      el.style.paddingLeft = '20px'
+    }
+
+    if (base_path === '/' && instance_path === '|/') {
+      const { expanded_subs } = state
+      const prefix_symbol = expanded_subs ? '┬' : '─'
+      const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
+      el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class}">${prefix_symbol}</span><span class="name clickable">/🌐</span>`
+      el.querySelector('.wand').onclick = reset
+      if (has_subs) {
+        el.querySelector('.prefix').onclick = () => toggle_subs(instance_path)
+      }
+      el.querySelector('.name').onclick = (ev) => select_node(ev, instance_path, base_path)
+      return el
+    }
+
+    const prefix_symbol = get_prefix(is_last_sub, has_subs, state, is_hub, is_hub_on_top)
+    const pipe_html = pipe_trail.map(should_pipe => `<span class=${should_pipe ? 'pipe' : 'blank'}>${should_pipe ? '│' : ' '}</span>`).join('')
+    
+    const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
+    const icon_class = (has_hubs && base_path !== '/') ? 'icon clickable' : 'icon'
+
+    el.innerHTML = `
+    <span class="indent">${pipe_html}</span>
+      <span class="${prefix_class}">${prefix_symbol}</span>
+      <span class="${icon_class}"></span>
+      <span class="name clickable">${entry.name}</span>
+    `
+    if(has_hubs && base_path !== '/') el.querySelector('.icon').onclick = () => toggle_hubs(instance_path)
+    if(has_subs) el.querySelector('.prefix').onclick = () => toggle_subs(instance_path)
+    el.querySelector('.name').onclick = (ev) => select_node(ev, instance_path, base_path)
+    
+    if (selected_instance_paths.includes(instance_path) || confirmed_instance_paths.includes(instance_path)) {
+      const checkbox_div = document.createElement('div')
+      checkbox_div.className = 'confirm-wrapper'
+      const is_confirmed = confirmed_instance_paths.includes(instance_path)
+      checkbox_div.innerHTML = `<input type="checkbox" ${is_confirmed ? 'checked' : ''}>`
+      checkbox_div.querySelector('input').onchange = (ev) => handle_confirm(ev, instance_path)
+      el.appendChild(checkbox_div)
+    }
+
+    return el
+  }
+
+  function re_render_node (instance_path) {
+    const node_data = view.find(n => n.instance_path === instance_path)
+    if (node_data) {
+        const old_node_el = shadow.querySelector(`[data-instance_path="${CSS.escape(instance_path)}"]`)
+        if (old_node_el) {
+            const new_node_el = create_node(node_data)
+            old_node_el.replaceWith(new_node_el)
+        }
+    }
+  }
+
+  function get_prefix(is_last_sub, has_subs, state, is_hub, is_hub_on_top) {
+    const { expanded_subs, expanded_hubs } = state
+    if (is_hub) {
+      if (is_hub_on_top) {
+        if (expanded_subs && expanded_hubs) return '┌┼'
+        if (expanded_subs) return '┌┬'
+        if (expanded_hubs) return '┌┴'
+        return '┌─'
+      } else {
+        if (expanded_subs && expanded_hubs) return '├┼'
+        if (expanded_subs) return '├┬'
+        if (expanded_hubs) return '├┴'
+        return '├─'
+      }
+    } else if (is_last_sub) {
+      if (expanded_subs && expanded_hubs) return '└┼'
+      if (expanded_subs) return '└┬'
+      if (expanded_hubs) return '└┴'
+      return '└─'
+    } else {
+      if (expanded_subs && expanded_hubs) return '├┼'
+      if (expanded_subs) return '├┬'
+      if (expanded_hubs) return '├┴'
+      return '├─'
+    }
+  }
+  
+  /******************************************************************************
+    5. VIEW MANIPULATION
+      Functions for toggling view states, selecting, confirming nodes and resetting graph.
+  ******************************************************************************/
+  function select_node(ev, instance_path, base_path) {
+    if (ev.ctrlKey) {
+      const new_selected_paths = [...selected_instance_paths]
+      const index = new_selected_paths.indexOf(instance_path)
+      if (index > -1) {
+        new_selected_paths.splice(index, 1)
+      } else {
+        new_selected_paths.push(instance_path)
+      }
+      update_runtime_state('selected_instance_paths', new_selected_paths)
+    } else {
+      update_runtime_state('selected_instance_paths', [instance_path])
+    }
+  }
+
+  function handle_confirm(ev, instance_path) {
+    const is_checked = ev.target.checked
+    const new_selected_paths = [...selected_instance_paths]
+    const new_confirmed_paths = [...confirmed_instance_paths]
+
+    if (is_checked) {
+      const idx = new_selected_paths.indexOf(instance_path)
+      if (idx > -1) new_selected_paths.splice(idx, 1)
+      if (!new_confirmed_paths.includes(instance_path)) {
+          new_confirmed_paths.push(instance_path)
+      }
+    } else {
+      if (!new_selected_paths.includes(instance_path)) {
+          new_selected_paths.push(instance_path)
+      }
+      const idx = new_confirmed_paths.indexOf(instance_path)
+      if (idx > -1) new_confirmed_paths.splice(idx, 1)
+    }
+    update_runtime_state('selected_instance_paths', new_selected_paths)
+    update_runtime_state('confirmed_selected', new_confirmed_paths)
+  }
+  function toggle_subs(instance_path) {
+    const state = instance_states[instance_path]
+    state.expanded_subs = !state.expanded_subs
+    build_and_render_view(instance_path)
+    update_runtime_state('instance_states', instance_states)
+  }
+
+  function toggle_hubs(instance_path) {
+    const state = instance_states[instance_path]
+    state.expanded_hubs = !state.expanded_hubs
+    build_and_render_view(instance_path)
+    update_runtime_state('instance_states', instance_states)
+  }
+
+  function reset() {
+    const root_path = '/'
+    const root_instance_path = '|/'
+    const new_instance_states = {}
+    if (all_entries[root_path]) {
+      new_instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
+    }
+    update_runtime_state('vertical_scroll_value', 0)
+    update_runtime_state('horizontal_scroll_value', 0)
+    update_runtime_state('selected_instance_paths', [])
+    update_runtime_state('confirmed_selected', [])
+    update_runtime_state('instance_states', new_instance_states)
+  }
+
+/******************************************************************************
+  6. VIRTUAL SCROLLING
+    Functions for handling virtual scrolling and DOM cleanup.
+******************************************************************************/
+  function onscroll() {
+    if (scroll_update_pending) return
+    scroll_update_pending = true
+    requestAnimationFrame(() => {
+      if (vertical_scroll_value !== container.scrollTop) {
+        vertical_scroll_value = container.scrollTop
+        drive_updated_by_scroll = true
+        update_runtime_state('vertical_scroll_value', vertical_scroll_value)
+      }
+      if (horizontal_scroll_value !== container.scrollLeft) {
+        horizontal_scroll_value = container.scrollLeft
+        drive_updated_by_scroll = true
+        update_runtime_state('horizontal_scroll_value', horizontal_scroll_value)
+      }
+      scroll_update_pending = false
+    })
+  }
 
   function handle_sentinel_intersection(entries) {
     entries.forEach(entry => {
@@ -348,170 +540,12 @@ async function graph_explorer(opts) {
       top_sentinel.style.height = `${start_index * node_height}px`
     }
   }
-
-  function get_prefix(is_last_sub, has_subs, state, is_hub, is_hub_on_top) {
-    const { expanded_subs, expanded_hubs } = state
-    if (is_hub) {
-      if (is_hub_on_top) {
-        if (expanded_subs && expanded_hubs) return '┌┼'
-        if (expanded_subs) return '┌┬'
-        if (expanded_hubs) return '┌┴'
-        return '┌─'
-      } else {
-        if (expanded_subs && expanded_hubs) return '├┼'
-        if (expanded_subs) return '├┬'
-        if (expanded_hubs) return '├┴'
-        return '├─'
-      }
-    } else if (is_last_sub) {
-      if (expanded_subs && expanded_hubs) return '└┼'
-      if (expanded_subs) return '└┬'
-      if (expanded_hubs) return '└┴'
-      return '└─'
-    } else {
-      if (expanded_subs && expanded_hubs) return '├┼'
-      if (expanded_subs) return '├┬'
-      if (expanded_hubs) return '├┴'
-      return '├─'
-    }
-  }
-
-  function reset() {
-    const root_path = '/'
-    const root_instance_path = '|/'
-    const new_instance_states = {}
-    if (all_entries[root_path]) {
-      new_instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
-    }
-    update_runtime_state('vertical_scroll_value', 0)
-    update_runtime_state('horizontal_scroll_value', 0)
-    update_runtime_state('selected_instance_paths', [])
-    update_runtime_state('confirmed_selected', [])
-    update_runtime_state('instance_states', new_instance_states)
-  }
-
-  function re_render_node (instance_path) {
-    const node_data = view.find(n => n.instance_path === instance_path)
-    if (node_data) {
-        const old_node_el = shadow.querySelector(`[data-instance_path="${CSS.escape(instance_path)}"]`)
-        if (old_node_el) {
-            const new_node_el = create_node(node_data)
-            old_node_el.replaceWith(new_node_el)
-        }
-    }
-  }
-
-  function create_node({ base_path, instance_path, depth, is_last_sub, is_hub, pipe_trail, is_hub_on_top }) {
-    const entry = all_entries[base_path]
-    const state = instance_states[instance_path]
-    const el = document.createElement('div')
-    el.className = `node type-${entry.type}`
-    el.dataset.instance_path = instance_path
-    if (selected_instance_paths.includes(instance_path)) el.classList.add('selected')
-    if (confirmed_instance_paths.includes(instance_path)) el.classList.add('confirmed')
-
-    const has_hubs = entry.hubs && entry.hubs.length > 0
-    const has_subs = entry.subs && entry.subs.length > 0
-    
-    if (depth) {
-      el.style.paddingLeft = '20px'
-    }
-
-    if (base_path === '/' && instance_path === '|/') {
-      const { expanded_subs } = state
-      const prefix_symbol = expanded_subs ? '┬' : '─'
-      const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
-      el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class}">${prefix_symbol}</span><span class="name clickable">/🌐</span>`
-      el.querySelector('.wand').onclick = reset
-      if (has_subs) {
-        el.querySelector('.prefix').onclick = () => toggle_subs(instance_path)
-      }
-      el.querySelector('.name').onclick = (ev) => select_node(ev, instance_path, base_path)
-      return el
-    }
-
-    const prefix_symbol = get_prefix(is_last_sub, has_subs, state, is_hub, is_hub_on_top)
-    const pipe_html = pipe_trail.map(should_pipe => `<span class=${should_pipe ? 'pipe' : 'blank'}>${should_pipe ? '│' : ' '}</span>`).join('')
-    
-    const prefix_class = (!has_hubs || base_path !== '/') ? 'prefix clickable' : 'prefix'
-    const icon_class = has_subs ? 'icon clickable' : 'icon'
-
-    el.innerHTML = `
-      <span class="indent">${pipe_html}</span>
-      <span class="${prefix_class}">${prefix_symbol}</span>
-      <span class="${icon_class}"></span>
-      <span class="name clickable">${entry.name}</span>
-    `
-    if(has_hubs && base_path !== '/') el.querySelector('.prefix').onclick = () => toggle_hubs(instance_path)
-    if(has_subs) el.querySelector('.icon').onclick = () => toggle_subs(instance_path)
-    el.querySelector('.name').onclick = (ev) => select_node(ev, instance_path, base_path)
-    
-    if (selected_instance_paths.includes(instance_path) || confirmed_instance_paths.includes(instance_path)) {
-      const checkbox_div = document.createElement('div')
-      checkbox_div.className = 'confirm-wrapper'
-      const is_confirmed = confirmed_instance_paths.includes(instance_path)
-      checkbox_div.innerHTML = `<input type="checkbox" ${is_confirmed ? 'checked' : ''}>`
-      checkbox_div.querySelector('input').onchange = (ev) => handle_confirm(ev, instance_path)
-      el.appendChild(checkbox_div)
-    }
-
-    return el
-  }
-
-  function handle_confirm(ev, instance_path) {
-    const is_checked = ev.target.checked
-    const new_selected_paths = [...selected_instance_paths]
-    const new_confirmed_paths = [...confirmed_instance_paths]
-
-    if (is_checked) {
-      const idx = new_selected_paths.indexOf(instance_path)
-      if (idx > -1) new_selected_paths.splice(idx, 1)
-      if (!new_confirmed_paths.includes(instance_path)) {
-          new_confirmed_paths.push(instance_path)
-      }
-    } else {
-      if (!new_selected_paths.includes(instance_path)) {
-          new_selected_paths.push(instance_path)
-      }
-      const idx = new_confirmed_paths.indexOf(instance_path)
-      if (idx > -1) new_confirmed_paths.splice(idx, 1)
-    }
-    update_runtime_state('selected_instance_paths', new_selected_paths)
-    update_runtime_state('confirmed_selected', new_confirmed_paths)
-  }
-
-  function select_node(ev, instance_path, base_path) {
-    if (ev.ctrlKey) {
-      const new_selected_paths = [...selected_instance_paths]
-      const index = new_selected_paths.indexOf(instance_path)
-      if (index > -1) {
-        new_selected_paths.splice(index, 1)
-      } else {
-        new_selected_paths.push(instance_path)
-      }
-      update_runtime_state('selected_instance_paths', new_selected_paths)
-    } else {
-      if (selected_instance_paths.length === 1 && selected_instance_paths[0] === instance_path) {
-        console.log(`entry ${base_path} selected again aka confirmed`)
-        return
-      }
-      update_runtime_state('selected_instance_paths', [instance_path])
-    }
-  }
-
-  function toggle_subs(instance_path) {
-    const state = instance_states[instance_path]
-    state.expanded_subs = !state.expanded_subs
-    update_runtime_state('instance_states', instance_states)
-  }
-
-  function toggle_hubs(instance_path) {
-    const state = instance_states[instance_path]
-    state.expanded_hubs = !state.expanded_hubs
-    update_runtime_state('instance_states', instance_states)
-  }
 }
 
+/******************************************************************************
+  7. FALLBACK CONFIGURATION
+    Provides default data and API for the component.
+******************************************************************************/
 function fallback_module() {
   return {
     api: fallback_instance
@@ -537,7 +571,7 @@ function fallback_module() {
                 align-items: center;
                 white-space: nowrap;
                 cursor: default;
-                height: 22px; /* Important for scroll calculation */
+                height: 19px; /* Important for scroll calculation */
               }
               .node.selected {
                 background-color: #776346;
@@ -588,7 +622,6 @@ function fallback_module() {
     }
   }
 }
-
 }).call(this)}).call(this,"/lib/graph_explorer.js")
 },{"./STATE":1}],3:[function(require,module,exports){
 const prefix = 'https://raw.githubusercontent.com/alyhxn/playproject/main/'
