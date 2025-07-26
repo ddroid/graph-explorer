@@ -15,7 +15,9 @@ async function graph_explorer(opts) {
 ******************************************************************************/
   const { sdb } = await get(opts.sid)
   const { drive } = sdb
-  await drive.list('runtime/').forEach(async path => console.log(path, await drive.get('runtime/' + path)))
+
+  // await drive.list('runtime/').forEach(async path => console.log(path, await drive.get('runtime/' + path)))
+
   let vertical_scroll_value = 0
   let horizontal_scroll_value = 0
   let selected_instance_paths = []
@@ -24,6 +26,7 @@ async function graph_explorer(opts) {
   let instance_states = {}
   let view = []
   let drive_updated_by_scroll = false
+  let is_rendering = false
   
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
@@ -46,6 +49,7 @@ async function graph_explorer(opts) {
   
   const observer = new IntersectionObserver(handle_sentinel_intersection, {
     root: container,
+    rootMargin: '500px 0px',
     threshold: 0
   })
   const on = {
@@ -310,14 +314,14 @@ async function graph_explorer(opts) {
     const has_subs = entry.subs && entry.subs.length > 0
     
     if (depth) {
-      el.style.paddingLeft = '20px'
+      el.style.paddingLeft = '17.5px'
     }
 
     if (base_path === '/' && instance_path === '|/') {
       const { expanded_subs } = state
-      const prefix_symbol = expanded_subs ? '┬' : '─'
+      const prefix_class_name = expanded_subs ? 'tee-down' : 'line-h'
       const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
-      el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class}">${prefix_symbol}</span><span class="name clickable">/🌐</span>`
+      el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class} ${prefix_class_name}"></span><span class="name clickable">/🌐</span>`
       el.querySelector('.wand').onclick = reset
       if (has_subs) {
         el.querySelector('.prefix').onclick = () => toggle_subs(instance_path)
@@ -326,15 +330,15 @@ async function graph_explorer(opts) {
       return el
     }
 
-    const prefix_symbol = get_prefix(is_last_sub, has_subs, state, is_hub, is_hub_on_top)
-    const pipe_html = pipe_trail.map(should_pipe => `<span class=${should_pipe ? 'pipe' : 'blank'}>${should_pipe ? '│' : ' '}</span>`).join('')
+    const prefix_class_name = get_prefix(is_last_sub, has_subs, state, is_hub, is_hub_on_top)
+    const pipe_html = pipe_trail.map(should_pipe => `<span class="${should_pipe ? 'pipe' : 'blank'}"></span>`).join('')
     
     const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
     const icon_class = (has_hubs && base_path !== '/') ? 'icon clickable' : 'icon'
 
     el.innerHTML = `
     <span class="indent">${pipe_html}</span>
-      <span class="${prefix_class}">${prefix_symbol}</span>
+      <span class="${prefix_class} ${prefix_class_name}"></span>
       <span class="${icon_class}"></span>
       <span class="name clickable">${entry.name}</span>
     `
@@ -369,26 +373,26 @@ async function graph_explorer(opts) {
     const { expanded_subs, expanded_hubs } = state
     if (is_hub) {
       if (is_hub_on_top) {
-        if (expanded_subs && expanded_hubs) return '┌┼'
-        if (expanded_subs) return '┌┬'
-        if (expanded_hubs) return '┌┴'
-        return '┌─'
+        if (expanded_subs && expanded_hubs) return 'top-cross'
+        if (expanded_subs) return 'top-tee-down'
+        if (expanded_hubs) return 'top-tee-up'
+        return 'top-line'
       } else {
-        if (expanded_subs && expanded_hubs) return '├┼'
-        if (expanded_subs) return '├┬'
-        if (expanded_hubs) return '├┴'
-        return '├─'
+        if (expanded_subs && expanded_hubs) return 'middle-cross'
+        if (expanded_subs) return 'middle-tee-down'
+        if (expanded_hubs) return 'middle-tee-up'
+        return 'middle-line'
       }
     } else if (is_last_sub) {
-      if (expanded_subs && expanded_hubs) return '└┼'
-      if (expanded_subs) return '└┬'
-      if (expanded_hubs) return '└┴'
-      return '└─'
+      if (expanded_subs && expanded_hubs) return 'bottom-cross'
+      if (expanded_subs) return 'bottom-tee-down'
+      if (expanded_hubs) return has_subs ? 'bottom-tee-up' : 'bottom-light-tee-up'
+      return has_subs ? 'bottom-line' : 'bottom-light-line'
     } else {
-      if (expanded_subs && expanded_hubs) return '├┼'
-      if (expanded_subs) return '├┬'
-      if (expanded_hubs) return '├┴'
-      return '├─'
+      if (expanded_subs && expanded_hubs) return 'middle-cross'
+      if (expanded_subs) return 'middle-tee-down'
+      if (expanded_hubs) return has_subs ? 'middle-tee-up' : 'middle-light-tee-up'
+      return has_subs ? 'middle-line' : 'middle-light-line'
     }
   }
   
@@ -432,6 +436,7 @@ async function graph_explorer(opts) {
     update_runtime_state('selected_instance_paths', new_selected_paths)
     update_runtime_state('confirmed_selected', new_confirmed_paths)
   }
+
   function toggle_subs(instance_path) {
     const state = instance_states[instance_path]
     state.expanded_subs = !state.expanded_subs
@@ -482,11 +487,37 @@ async function graph_explorer(opts) {
     })
   }
 
+  async function fill_viewport_downwards() {
+    if (is_rendering) return
+    is_rendering = true
+    const container_rect = container.getBoundingClientRect()
+    let sentinel_rect = bottom_sentinel.getBoundingClientRect()
+    while (end_index < view.length && sentinel_rect.top < container_rect.bottom + 500) {
+      render_next_chunk()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      sentinel_rect = bottom_sentinel.getBoundingClientRect()
+    }
+    is_rendering = false
+  }
+
+  async function fill_viewport_upwards() {
+    if (is_rendering) return
+    is_rendering = true
+    const container_rect = container.getBoundingClientRect()
+    let sentinel_rect = top_sentinel.getBoundingClientRect()
+    while (start_index > 0 && sentinel_rect.bottom > container_rect.top - 500) {
+      render_prev_chunk()
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      sentinel_rect = top_sentinel.getBoundingClientRect()
+    }
+    is_rendering = false
+  }
+
   function handle_sentinel_intersection(entries) {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
-        if (entry.target === top_sentinel) render_prev_chunk()
-        else if (entry.target === bottom_sentinel) render_next_chunk()
+        if (entry.target === top_sentinel) fill_viewport_upwards()
+        else if (entry.target === bottom_sentinel) fill_viewport_downwards()
       }
     })
   }
@@ -559,6 +590,9 @@ function fallback_module() {
         'style/': {
           'theme.css': {
             raw: `
+              .graph-container, .node {
+                font-family: monospace;
+              }
               .graph-container {
                 color: #abb2bf;
                 background-color: #282c34;
@@ -571,7 +605,7 @@ function fallback_module() {
                 align-items: center;
                 white-space: nowrap;
                 cursor: default;
-                height: 19px; /* Important for scroll calculation */
+                height: 16px; /* Important for scroll calculation */
               }
               .node.selected {
                 background-color: #776346;
@@ -589,16 +623,35 @@ function fallback_module() {
               .pipe {
                 text-align: center;
               }
+              .pipe::before { content: '┃'; }
               .blank {
-                width: 10px;
+                width: 8.5px;
                 text-align: center;
               }
               .clickable {
                 cursor: pointer;
               }
               .prefix, .icon {
-                margin-right: 6px;
+                margin-right: 2px;
               }
+              .top-cross::before { content: '┏╋'; }
+              .top-tee-down::before { content: '┏┳'; }
+              .top-tee-up::before { content: '┏┻'; }
+              .top-line::before { content: '┏━'; }
+              .middle-cross::before { content: '┣╋'; }
+              .middle-tee-down::before { content: '┣┳'; }
+              .middle-tee-up::before { content: '┣┻'; }
+              .middle-line::before { content: '┣━'; }
+              .bottom-cross::before { content: '┗╋'; }
+              .bottom-tee-down::before { content: '┗┳'; }
+              .bottom-tee-up::before { content: '┗┻'; }
+              .bottom-line::before { content: '┗━'; }
+              .bottom-light-tee-up::before { content: '┖┸'; }
+              .bottom-light-line::before { content: '┖─'; }
+              .middle-light-tee-up::before { content: '┠┸'; }
+              .middle-light-line::before { content: '┠─'; }
+              .tee-down::before { content: '┳'; }
+              .line-h::before { content: '━'; }
               .icon { display: inline-block; text-align: center; }
               .name { flex-grow: 1; }
               .node.type-root > .icon::before { content: '🌐'; }
@@ -622,6 +675,7 @@ function fallback_module() {
     }
   }
 }
+
 }).call(this)}).call(this,"/lib/graph_explorer.js")
 },{"./STATE":1}],3:[function(require,module,exports){
 const prefix = 'https://raw.githubusercontent.com/alyhxn/playproject/main/'
