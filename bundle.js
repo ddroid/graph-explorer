@@ -11,7 +11,9 @@ module.exports = graph_explorer
 async function graph_explorer(opts) {
 /******************************************************************************
   1. COMPONENT INITIALIZATION
-    Set up state, variables, DOM, and watchers.
+    - This sets up the initial state, variables, and the basic DOM structure.
+    - It also initializes the IntersectionObserver for virtual scrolling and
+      sets up the watcher for state changes.
 ******************************************************************************/
   const { sdb } = await get(opts.sid)
   const { drive } = sdb
@@ -20,16 +22,15 @@ async function graph_explorer(opts) {
   let horizontal_scroll_value = 0
   let selected_instance_paths = []
   let confirmed_instance_paths = []
-  let all_entries = {}
-  let instance_states = {}
-  let view = []
-  let drive_updated_by_scroll = false
-  let drive_updated_by_toggle = false
-  let is_rendering = false
-  let spacer_element = null
-  let spacer_initial_scroll_top = 0
+  let all_entries = {} // Holds the entire graph structure from entries.json.
+  let instance_states = {} // Holds expansion state {expanded_subs, expanded_hubs} for each node instance.
+  let view = [] // A flat array representing the visible nodes in the graph.
+  let drive_updated_by_scroll = false // Flag to prevent `onbatch` from re-rendering on scroll updates.
+  let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
+  let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
+  let spacer_element = null // DOM element used to manage scroll position when hubs are toggled.
   let spacer_initial_height = 0
-  let hub_num = 0
+  let hub_num = 0 // Counter for expanded hubs.
 
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
@@ -46,7 +47,7 @@ async function graph_explorer(opts) {
   let end_index = 0
   const chunk_size = 50
   const max_rendered_nodes = chunk_size * 3
-  const node_height = 16
+  let node_height
 
   const top_sentinel = document.createElement('div')
   const bottom_sentinel = document.createElement('div')
@@ -56,20 +57,24 @@ async function graph_explorer(opts) {
     rootMargin: '500px 0px',
     threshold: 0
   })
+  // Define handlers for different data types from the drive, called by `onbatch`.
   const on = {
     entries: on_entries,
     style: inject_style,
     runtime: on_runtime
   }
+  // Start watching for state changes. This is the main trigger for all updates.
   await sdb.watch(onbatch)
   
   return el
 
 /******************************************************************************
   2. STATE AND DATA HANDLING
-    Functions for processing data from the STATE module.
+    - These functions process incoming data from the STATE module's `sdb.watch`.
+    - `onbatch` is the primary entry point.
 ******************************************************************************/
   async function onbatch(batch) {
+    // Prevent feedback loops from scroll or toggle actions.
     if (drive_updated_by_scroll) {
       drive_updated_by_scroll = false
       return
@@ -78,6 +83,7 @@ async function graph_explorer(opts) {
       drive_updated_by_toggle = false
       return
     }
+
     for (const { type, paths } of batch) {
       if (!paths || paths.length === 0) continue
       const data = await Promise.all(paths.map(async (path) => {
@@ -89,7 +95,7 @@ async function graph_explorer(opts) {
           return null
         }
       }))
-
+      // Call the appropriate handler based on `type`.
       const func = on[type]
       func ? func({ data, type, paths }) : fail(data, type)
     }
@@ -117,6 +123,7 @@ async function graph_explorer(opts) {
       return
     }
   
+    // After receiving entries, ensure the root node state is initialized and trigger the first render.
     const root_path = '/'
     if (all_entries[root_path]) {
       const root_instance_path = '|/'
@@ -146,8 +153,11 @@ async function graph_explorer(opts) {
         console.error(`Failed to parse JSON for ${path}:`, e)
         continue
       }
-
+      // Handle different runtime state updates based on the path i.e files
       switch (true) {
+        case path.endsWith('node_height.json'):
+          node_height = value
+          break
         case path.endsWith('vertical_scroll_value.json'):
           if (typeof value === 'number') vertical_scroll_value = value
           break
@@ -200,6 +210,7 @@ async function graph_explorer(opts) {
     shadow.adoptedStyleSheets = [sheet]
   }
 
+  // Helper to persist component state to the drive.
   async function update_runtime_state (name, value) {
     try {
       await drive.put(`runtime/${name}.json`, JSON.stringify(value))
@@ -210,7 +221,9 @@ async function graph_explorer(opts) {
 
 /******************************************************************************
   3. VIEW AND RENDERING LOGIC
-    Functions for building and rendering the graph view.
+    - These functions build the `view` array and render the DOM.
+    - `build_and_render_view` is the main orchestrator.
+    - `build_view_recursive` creates the flat `view` array from the hierarchical data.
 ******************************************************************************/
   function build_and_render_view(focal_instance_path, hub_toggle = false) {
     if (Object.keys(all_entries).length === 0) {
@@ -226,6 +239,7 @@ async function graph_explorer(opts) {
       existing_spacer_height = parseFloat(spacer_element.style.height) || 0
     }
 
+    // Recursively build the new `view` array from the graph data.
     view = build_view_recursive({
       base_path: '/',
       parent_instance_path: '',
@@ -237,9 +251,10 @@ async function graph_explorer(opts) {
       all_entries
     })
 
+    // Calculate the new scroll position to maintain the user's viewport.
     let new_scroll_top = old_scroll_top
-
     if (focal_instance_path) {
+      // If an action was focused on a specific node (like a toggle), try to keep it in the same position.
       const old_toggled_node_index = old_view.findIndex(node => node.instance_path === focal_instance_path)
       const new_toggled_node_index = view.findIndex(node => node.instance_path === focal_instance_path)
 
@@ -248,6 +263,7 @@ async function graph_explorer(opts) {
         new_scroll_top = old_scroll_top + (index_change * node_height)
       }
     } else if (old_view.length > 0) {
+      // Otherwise, try to keep the topmost visible node in the same position.
       const old_top_node_index = Math.floor(old_scroll_top / node_height)
       const scroll_offset = old_scroll_top % node_height
       const old_top_node = old_view[old_top_node_index]
@@ -280,6 +296,13 @@ async function graph_explorer(opts) {
     observer.observe(top_sentinel)
     observer.observe(bottom_sentinel)
 
+    const set_scroll_and_sync = () => {
+      container.scrollTop = new_scroll_top
+      container.scrollLeft = old_scroll_left
+      vertical_scroll_value = container.scrollTop
+    }
+
+    // Handle the spacer element used for keep entries static wrt cursor by scrolling when hubs are toggled.
     if (hub_toggle || hub_num > 0) {
       spacer_element = document.createElement('div')
       spacer_element.className = 'spacer'
@@ -296,28 +319,21 @@ async function graph_explorer(opts) {
             spacer_initial_scroll_top = new_scroll_top
             spacer_element.style.height = `${spacer_initial_height}px`
           }
-
-          container.scrollTop = new_scroll_top
-          container.scrollLeft = old_scroll_left
+          set_scroll_and_sync()
         })
       } else {
         spacer_element.style.height = `${existing_spacer_height}px`
-        requestAnimationFrame(() => {
-          container.scrollTop = new_scroll_top
-          container.scrollLeft = old_scroll_left
-        })
+        requestAnimationFrame(set_scroll_and_sync)
       }
     } else {
       spacer_element = null
       spacer_initial_height = 0
       spacer_initial_scroll_top = 0
-      requestAnimationFrame(() => {
-        container.scrollTop = new_scroll_top
-        container.scrollLeft = old_scroll_left
-      })
+      requestAnimationFrame(set_scroll_and_sync)
     }
   }
 
+  // Traverses the hierarchical `all_entries` data and builds a flat `view` array for rendering.
   function build_view_recursive({
     base_path,
     parent_instance_path,
@@ -342,9 +358,12 @@ async function graph_explorer(opts) {
     }
     const state = instance_states[instance_path]
     const is_hub_on_top = (base_path === all_entries[parent_base_path]?.hubs?.[0]) || (base_path === '/')
+
+    // Calculate the pipe trail for drawing the tree lines. Quite complex logic here.
     const children_pipe_trail = [...parent_pipe_trail]
     let last_pipe = null
     if (depth > 0) {
+
       if (is_hub) {
         last_pipe = [...parent_pipe_trail]
         if (is_last_sub) { 
@@ -372,6 +391,7 @@ async function graph_explorer(opts) {
     }
 
     let current_view = []
+    // If hubs are expanded, recursively add them to the view first (they appear above the node).
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       entry.hubs.forEach((hub_path, i, arr) => {
         current_view = current_view.concat(
@@ -401,6 +421,7 @@ async function graph_explorer(opts) {
       is_hub_on_top
     })
 
+    // If subs are expanded, recursively add them to the view (they appear below the node).
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       entry.subs.forEach((sub_path, i, arr) => {
         current_view = current_view.concat(
@@ -421,8 +442,9 @@ async function graph_explorer(opts) {
   }
   
   /******************************************************************************
- 4. NODE CREATION AND GRAPH BUILDING
-   Functions for creating nodes in the graph.
+ 4. NODE CREATION AND EVENT HANDLING
+   - `create_node` generates the DOM element for a single node.
+   - It sets up event handlers for user interactions like selecting or toggling.
    ******************************************************************************/
   
   function create_node({ base_path, instance_path, depth, is_last_sub, is_hub, pipe_trail, is_hub_on_top }) {
@@ -454,7 +476,9 @@ async function graph_explorer(opts) {
     if (depth) {
       el.style.paddingLeft = '17.5px'
     }
+    el.style.height = `${node_height}px`
 
+    // Handle the special case for the root node since its a bit different.
     if (base_path === '/' && instance_path === '|/') {
       const { expanded_subs } = state
       const prefix_class_name = expanded_subs ? 'tee-down' : 'line-h'
@@ -514,6 +538,7 @@ async function graph_explorer(opts) {
     return el
   }
 
+  // `re_render_node` updates a single node in the DOM, used when only its selection state changes.
   function re_render_node (instance_path) {
     const node_data = view.find(n => n.instance_path === instance_path)
     if (node_data) {
@@ -525,6 +550,7 @@ async function graph_explorer(opts) {
     }
   }
 
+  // `get_prefix` determines which box-drawing character to use for the node's prefix. It gives the name of a specific CSS class.
   function get_prefix({ is_last_sub, has_subs, state, is_hub, is_hub_on_top }) {
     if (!state) {
       console.error('get_prefix called with invalid state.')
@@ -557,8 +583,9 @@ async function graph_explorer(opts) {
   }
   
   /******************************************************************************
-    5. VIEW MANIPULATION
-      Functions for toggling view states, selecting, confirming nodes and resetting graph.
+    5. VIEW MANIPULATION & USER ACTIONS
+      - These functions handle user interactions like selecting, confirming,
+        toggling, and resetting the graph.
   ******************************************************************************/
   function select_node(ev, instance_path) {
     if (ev.ctrlKey) {
@@ -606,6 +633,7 @@ async function graph_explorer(opts) {
     const state = instance_states[instance_path]
     state.expanded_subs = !state.expanded_subs
     build_and_render_view(instance_path)
+    // Set a flag to prevent the subsequent `onbatch` call from causing a render loop.
     drive_updated_by_toggle = true
     update_runtime_state('instance_states', instance_states)
   }
@@ -639,32 +667,27 @@ async function graph_explorer(opts) {
 
 /******************************************************************************
   6. VIRTUAL SCROLLING
-    Functions for handling virtual scrolling and DOM cleanup.
+    - These functions implement virtual scrolling to handle large graphs
+      efficiently using an IntersectionObserver.
 ******************************************************************************/
   function onscroll() {
     if (scroll_update_pending) return
     scroll_update_pending = true
     requestAnimationFrame(() => {
-      if (spacer_element && spacer_initial_height > 0) {
-        const scroll_delta = spacer_initial_scroll_top - container.scrollTop
-        
-        if (scroll_delta > 0) {
-          const new_height = spacer_initial_height - scroll_delta
-          if (new_height <= 0) {
-            spacer_element.remove()
-            spacer_element = null
-            spacer_initial_height = 0
-            spacer_initial_scroll_top = 0
-            hub_num = 0
-          } else {
-            spacer_element.style.height = `${new_height}px`
-          }
-        }
+      const scroll_delta = vertical_scroll_value - container.scrollTop
+
+      // Handle removal of the scroll spacer.
+      if (spacer_element && scroll_delta > 0 && container.scrollTop == 0) {
+        spacer_element.remove()
+        spacer_element = null
+        spacer_initial_height = 0
+        spacer_initial_scroll_top = 0
+        hub_num = 0
       }
 
       if (vertical_scroll_value !== container.scrollTop) {
         vertical_scroll_value = container.scrollTop
-        drive_updated_by_scroll = true
+        drive_updated_by_scroll = true // Set flag to prevent render loop.
         update_runtime_state('vertical_scroll_value', vertical_scroll_value)
       }
       if (horizontal_scroll_value !== container.scrollLeft) {
@@ -733,12 +756,14 @@ async function graph_explorer(opts) {
     cleanup_dom(true)
   }
 
+  // Removes nodes from the DOM that are far outside the viewport.
   function cleanup_dom(is_scrolling_up) {
     const rendered_count = end_index - start_index
     if (rendered_count <= max_rendered_nodes) return
 
     const to_remove_count = rendered_count - max_rendered_nodes
     if (is_scrolling_up) {
+      // If scrolling up, remove nodes from the bottom.
       for (let i = 0; i < to_remove_count; i++) {
         const temp = bottom_sentinel.previousElementSibling
         if (temp && temp !== top_sentinel) {
@@ -748,6 +773,7 @@ async function graph_explorer(opts) {
       end_index -= to_remove_count
       bottom_sentinel.style.height = `${(view.length - end_index) * node_height}px`
     } else {
+      // If scrolling down, remove nodes from the top.
       for (let i = 0; i < to_remove_count; i++) {
         const temp = top_sentinel.nextElementSibling
         if (temp && temp !== bottom_sentinel) {
@@ -762,7 +788,10 @@ async function graph_explorer(opts) {
 
 /******************************************************************************
   7. FALLBACK CONFIGURATION
-    Provides default data and API for the component.
+    - This provides the default data and API configuration for the component,
+      following the pattern described in `instructions.md`.
+    - It defines the default datasets (`entries`, `style`, `runtime`) and their
+      initial values.
 ******************************************************************************/
 function fallback_module() {
   return {
@@ -792,7 +821,6 @@ function fallback_module() {
                 align-items: center;
                 white-space: nowrap;
                 cursor: default;
-                height: 16px; /* Important for scroll calculation */
               }
               .node.error {
                 color: red;
@@ -855,6 +883,7 @@ function fallback_module() {
           }
         },
         'runtime/': {
+          'node_height.json': { raw: '16' },
           'vertical_scroll_value.json': { raw: '0' },
           'horizontal_scroll_value.json': { raw: '0' },
           'selected_instance_paths.json': { raw: '[]' },
@@ -865,7 +894,6 @@ function fallback_module() {
     }
   }
 }
-
 }).call(this)}).call(this,"/lib/graph_explorer.js")
 },{"./STATE":1}],3:[function(require,module,exports){
 const prefix = 'https://raw.githubusercontent.com/alyhxn/playproject/main/'
