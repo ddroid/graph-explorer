@@ -75,7 +75,8 @@ function fallback_module () {
         mapping: {
           'style': 'style',
           'entries': 'entries',
-          'runtime': 'runtime'
+          'runtime': 'runtime',
+          'mode': 'mode'
         }
       }
     },
