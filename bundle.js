@@ -24,7 +24,9 @@ async function graph_explorer(opts) {
   let confirmed_instance_paths = []
   let all_entries = {} // Holds the entire graph structure from entries.json.
   let instance_states = {} // Holds expansion state {expanded_subs, expanded_hubs} for each node instance.
+  let search_state_instances = {}
   let view = [] // A flat array representing the visible nodes in the graph.
+  let mode // Current mode of the graph explorer, can be set to 'default', 'menubar' or 'search'. Its value should be set by the `mode` file in the drive.
   let drive_updated_by_scroll = false // Flag to prevent `onbatch` from re-rendering on scroll updates.
   let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
   let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
@@ -35,7 +37,11 @@ async function graph_explorer(opts) {
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
   const shadow = el.attachShadow({ mode: 'closed' })
-  shadow.innerHTML = `<div class="graph-container"></div>`
+  shadow.innerHTML = `
+    <div class="menubar"></div>
+    <div class="graph-container"></div>
+  `
+  const menubar = shadow.querySelector('.menubar')
   const container = shadow.querySelector('.graph-container')
 
   document.body.style.margin = 0
@@ -61,11 +67,12 @@ async function graph_explorer(opts) {
   const on = {
     entries: on_entries,
     style: inject_style,
-    runtime: on_runtime
+    runtime: on_runtime,
+    mode: on_mode
   }
   // Start watching for state changes. This is the main trigger for all updates.
   await sdb.watch(onbatch)
-  
+
   return el
 
 /******************************************************************************
@@ -89,7 +96,9 @@ async function graph_explorer(opts) {
       const data = await Promise.all(paths.map(async (path) => {
         try {
           const file = await drive.get(path)
-          return file ? file.raw : null
+          if (!file) return null
+          if (type === 'mode') return file.raw.replace(/"/g, '')
+          return file.raw
         } catch (e) {
           console.error(`Error getting file from drive: ${path}`, e)
           return null
@@ -97,7 +106,11 @@ async function graph_explorer(opts) {
       }))
       // Call the appropriate handler based on `type`.
       const func = on[type]
-      func ? func({ data, type, paths }) : fail(data, type)
+      if (type === 'mode') {
+        func ? func(data[0]) : fail(data, type)
+      } else {
+        func ? func({ data, type, paths }) : fail(data, type)
+      }
     }
   }
 
@@ -204,6 +217,13 @@ async function graph_explorer(opts) {
     }
   }
 
+  function on_mode (new_mode) {
+    if (!new_mode || mode === new_mode) return
+    mode = new_mode
+    render_menubar()
+    handle_mode_change()
+  }
+
   function inject_style({ data }) {
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(data[0])
@@ -216,6 +236,14 @@ async function graph_explorer(opts) {
       await drive.put(`runtime/${name}.json`, JSON.stringify(value))
     } catch (e) {
       console.error(`Failed to update runtime state for ${name}:`, e)
+    }
+  }
+
+  async function update_mode_state (value) {
+    try {
+      await drive.put('mode/current_mode.json', JSON.stringify(value))
+    } catch (e) {
+      console.error('Failed to update mode state:', e)
     }
   }
 
@@ -441,13 +469,13 @@ async function graph_explorer(opts) {
     return current_view
   }
   
-  /******************************************************************************
+/******************************************************************************
  4. NODE CREATION AND EVENT HANDLING
    - `create_node` generates the DOM element for a single node.
    - It sets up event handlers for user interactions like selecting or toggling.
-   ******************************************************************************/
+******************************************************************************/
   
-  function create_node({ base_path, instance_path, depth, is_last_sub, is_hub, pipe_trail, is_hub_on_top }) {
+  function create_node({ base_path, instance_path, depth, is_last_sub, is_hub, pipe_trail, is_hub_on_top, is_search_match, is_direct_match, is_in_original_view }) {
     const entry = all_entries[base_path]
     if (!entry) {
       console.error(`Entry not found for path: ${base_path}. Cannot create node.`)
@@ -456,17 +484,29 @@ async function graph_explorer(opts) {
       err_el.textContent = `Error: Missing entry for ${base_path}`
       return err_el
     }
-    
-    let state = instance_states[instance_path]
+
+    const states = mode === 'search' ? search_state_instances : instance_states
+    let state = states[instance_path]
     if (!state) {
       console.warn(`State not found for instance: ${instance_path}. Using default.`)
       state = { expanded_subs: false, expanded_hubs: false }
-      instance_states[instance_path] = state
+      states[instance_path] = state
     }
 
     const el = document.createElement('div')
     el.className = `node type-${entry.type || 'unknown'}`
     el.dataset.instance_path = instance_path
+
+    if (is_search_match) {
+      el.classList.add('search-result')
+      if (is_direct_match) {
+        el.classList.add('direct-match')
+      }
+      if (!is_in_original_view) {
+        el.classList.add('new-entry')
+      }
+    }
+
     if (selected_instance_paths.includes(instance_path)) el.classList.add('selected')
     if (confirmed_instance_paths.includes(instance_path)) el.classList.add('confirmed')
 
@@ -482,7 +522,7 @@ async function graph_explorer(opts) {
     if (base_path === '/' && instance_path === '|/') {
       const { expanded_subs } = state
       const prefix_class_name = expanded_subs ? 'tee-down' : 'line-h'
-      const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
+      const prefix_class = has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
       el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class} ${prefix_class_name}"></span><span class="name clickable">/🌐</span>`
 
       const wand_el = el.querySelector('.wand')
@@ -490,7 +530,13 @@ async function graph_explorer(opts) {
 
       if (has_subs) {
         const prefix_el = el.querySelector('.prefix')
-        if (prefix_el) prefix_el.onclick = () => toggle_subs(instance_path)
+        if (prefix_el) {
+          if (mode !== 'search') {
+            prefix_el.onclick = () => toggle_subs(instance_path)
+          } else {
+            prefix_el.onclick = null
+          }
+        }
       }
 
       const name_el = el.querySelector('.name')
@@ -502,8 +548,8 @@ async function graph_explorer(opts) {
     const prefix_class_name = get_prefix({ is_last_sub, has_subs, state, is_hub, is_hub_on_top })
     const pipe_html = pipe_trail.map(should_pipe => `<span class="${should_pipe ? 'pipe' : 'blank'}"></span>`).join('')
     
-    const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
-    const icon_class = (has_hubs && base_path !== '/') ? 'icon clickable' : 'icon'
+    const prefix_class = has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
+    const icon_class = (has_hubs && base_path !== '/') && mode !== 'search' ? 'icon clickable' : 'icon'
 
     el.innerHTML = `
     <span class="indent">${pipe_html}</span>
@@ -512,14 +558,26 @@ async function graph_explorer(opts) {
       <span class="name clickable">${entry.name || base_path}</span>
     `
 
-    if(has_hubs && base_path !== '/') {
+    if (has_hubs && base_path !== '/') {
       const icon_el = el.querySelector('.icon')
-      if (icon_el) icon_el.onclick = () => toggle_hubs(instance_path)
+      if (icon_el) {
+        if (mode !== 'search') {
+          icon_el.onclick = () => toggle_hubs(instance_path)
+        } else {
+          icon_el.onclick = null
+        }
+      }
     }
 
-    if(has_subs) {
+    if (has_subs) {
       const prefix_el = el.querySelector('.prefix')
-      if (prefix_el) prefix_el.onclick = () => toggle_subs(instance_path)
+      if (prefix_el) {
+        if (mode !== 'search') {
+          prefix_el.onclick = () => toggle_subs(instance_path)
+        } else {
+          prefix_el.onclick = null
+        }
+      }
     }
 
     const name_el = el.querySelector('.name')
@@ -582,12 +640,190 @@ async function graph_explorer(opts) {
     }
   }
   
-  /******************************************************************************
-    5. VIEW MANIPULATION & USER ACTIONS
+/******************************************************************************
+  5. MENUBAR AND SEARCH
+******************************************************************************/
+  function render_menubar () {
+    menubar.replaceChildren() // Clear existing menubar
+    const search_button = document.createElement('button')
+    search_button.textContent = 'Search'
+    search_button.onclick = toggle_search_mode
+
+    menubar.appendChild(search_button)
+
+    if (mode === 'search') {
+      const search_input = document.createElement('input')
+      search_input.type = 'text'
+      search_input.placeholder = 'Search entries...'
+      search_input.className = 'search-input'
+      search_input.oninput = on_search_input
+      menubar.appendChild(search_input)
+      search_input.focus()
+    }
+  }
+
+  function handle_mode_change () {
+    if (mode === 'default') {
+      menubar.style.display = 'none'
+    } else {
+      menubar.style.display = 'flex'
+    }
+    if (mode !== 'search') {
+      build_and_render_view()
+    }
+  }
+
+  function toggle_search_mode () {
+    const new_mode = mode === 'search' ? 'menubar' : 'search'
+    update_mode_state(new_mode)
+  }
+
+  function on_search_input (event) {
+    const query = event.target.value.trim()
+    perform_search(query)
+  }
+
+  function perform_search (query) {
+    if (!query) {
+      build_and_render_view()
+      return
+    }
+    const original_view = build_view_recursive({
+      base_path: '/',
+      parent_instance_path: '',
+      depth: 0,
+      is_last_sub : true,
+      is_hub: false,
+      parent_pipe_trail: [],
+      instance_states,
+      all_entries
+    })
+    search_state_instances = {}
+    const search_view = build_search_view_recursive({
+      query,
+      base_path: '/',
+      parent_instance_path: '',
+      depth: 0,
+      is_last_sub : true,
+      is_hub: false,
+      parent_pipe_trail: [],
+      instance_states: search_state_instances, // Use a temporary state for search
+      all_entries,
+      original_view
+    })
+    render_search_results(search_view, query)
+  }
+
+  function build_search_view_recursive({
+    query,
+    base_path,
+    parent_instance_path,
+    depth,
+    is_last_sub,
+    is_hub,
+    parent_pipe_trail,
+    instance_states,
+    all_entries,
+    original_view
+  }) {
+    const entry = all_entries[base_path]
+    if (!entry) return []
+
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const is_direct_match = entry.name && entry.name.toLowerCase().includes(query.toLowerCase())
+
+    let sub_results = []
+    if (Array.isArray(entry.subs)) {
+      const children_pipe_trail = [...parent_pipe_trail]
+      if (depth > 0) children_pipe_trail.push(!is_last_sub)
+
+      sub_results = entry.subs.map((sub_path, i, arr) => {
+        return build_search_view_recursive({
+          query,
+          base_path: sub_path,
+          parent_instance_path: instance_path,
+          depth: depth + 1,
+          is_last_sub: i === arr.length - 1,
+          is_hub: false,
+          parent_pipe_trail: children_pipe_trail,
+          instance_states,
+          all_entries,
+          original_view
+        })
+      }).flat()
+    }
+
+    const has_matching_descendant = sub_results.length > 0
+
+    if (!is_direct_match && !has_matching_descendant) {
+      return []
+    }
+
+    instance_states[instance_path] = {
+      expanded_subs: has_matching_descendant,
+      expanded_hubs: false
+    }
+
+    const is_in_original_view = original_view.some(node => node.instance_path === instance_path)
+
+    const current_node_view = {
+      base_path,
+      instance_path,
+      depth,
+      is_last_sub,
+      is_hub,
+      pipe_trail: parent_pipe_trail,
+      is_hub_on_top: false,
+      is_search_match: true,
+      is_direct_match,
+      is_in_original_view
+    }
+
+    return [current_node_view, ...sub_results]
+  }
+
+  function render_search_results (search_view, query) {
+    view = search_view
+    container.replaceChildren()
+
+    if (search_view.length === 0) {
+      const no_results_el = document.createElement('div')
+      no_results_el.className = 'no-results'
+      no_results_el.textContent = `No results for "${query}"`
+      container.appendChild(no_results_el)
+      return
+    }
+
+    const fragment = document.createDocumentFragment()
+    for (const node_data of search_view) {
+      fragment.appendChild(create_node(node_data))
+    }
+    container.appendChild(fragment)
+  }
+
+/******************************************************************************
+  6. VIEW MANIPULATION & USER ACTIONS
       - These functions handle user interactions like selecting, confirming,
         toggling, and resetting the graph.
   ******************************************************************************/
   function select_node(ev, instance_path) {
+    if (mode === 'search') {
+      let current_path = instance_path
+      // Traverse up the tree to expand all parents
+      while (current_path) {
+        const parent_path = current_path.substring(0, current_path.lastIndexOf('|'))
+        if (!parent_path) break // Stop if there's no parent left
+
+        if (!instance_states[parent_path]) {
+          instance_states[parent_path] = { expanded_subs: false, expanded_hubs: false }
+        }
+        instance_states[parent_path].expanded_subs = true
+        current_path = parent_path
+      }
+      drive_updated_by_toggle = true
+      update_runtime_state('instance_states', instance_states)
+    }
+
     if (ev.ctrlKey) {
       const new_selected_paths = [...selected_instance_paths]
       const index = new_selected_paths.indexOf(instance_path)
@@ -666,7 +902,7 @@ async function graph_explorer(opts) {
   }
 
 /******************************************************************************
-  6. VIRTUAL SCROLLING
+  7. VIRTUAL SCROLLING
     - These functions implement virtual scrolling to handle large graphs
       efficiently using an IntersectionObserver.
 ******************************************************************************/
@@ -787,7 +1023,7 @@ async function graph_explorer(opts) {
 }
 
 /******************************************************************************
-  7. FALLBACK CONFIGURATION
+  8. FALLBACK CONFIGURATION
     - This provides the default data and API configuration for the component,
       following the pattern described in `instructions.md`.
     - It defines the default datasets (`entries`, `style`, `runtime`) and their
@@ -830,6 +1066,21 @@ function fallback_module() {
               }
               .node.confirmed {
                 background-color: #774346;
+              }
+              .node.new-entry {
+                background-color: #87ceeb; /* sky blue */
+              }
+              .menubar {
+                display: flex;
+                padding: 5px;
+                background-color: #21252b;
+                border-bottom: 1px solid #181a1f;
+              }
+              .search-input {
+                margin-left: auto;
+                background-color: #282c34;
+                color: #abb2bf;
+                border: 1px solid #181a1f;
               }
               .confirm-wrapper {
                 margin-left: auto;
@@ -889,6 +1140,9 @@ function fallback_module() {
           'selected_instance_paths.json': { raw: '[]' },
           'confirmed_selected.json': { raw: '[]' },
           'instance_states.json': { raw: '{}' }
+        },
+        'mode/': {
+          'current_mode.json': { raw: '"menubar"' }
         }
       }
     }
@@ -995,7 +1249,8 @@ function fallback_module () {
         mapping: {
           'style': 'style',
           'entries': 'entries',
-          'runtime': 'runtime'
+          'runtime': 'runtime',
+          'mode': 'mode'
         }
       }
     },
