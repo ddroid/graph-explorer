@@ -27,8 +27,11 @@ async function graph_explorer(opts) {
   let search_state_instances = {}
   let view = [] // A flat array representing the visible nodes in the graph.
   let mode // Current mode of the graph explorer, can be set to 'default', 'menubar' or 'search'. Its value should be set by the `mode` file in the drive.
+  let previous_mode = 'menubar'
+  let search_query = ''
   let drive_updated_by_scroll = false // Flag to prevent `onbatch` from re-rendering on scroll updates.
   let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
+  let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
   let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
   let spacer_element = null // DOM element used to manage scroll position when hubs are toggled.
   let spacer_initial_height = 0
@@ -90,6 +93,10 @@ async function graph_explorer(opts) {
       drive_updated_by_toggle = false
       return
     }
+    if (drive_updated_by_search) {
+      drive_updated_by_search = false
+      return
+    }
 
     for (const { type, paths } of batch) {
       if (!paths || paths.length === 0) continue
@@ -97,7 +104,6 @@ async function graph_explorer(opts) {
         try {
           const file = await drive.get(path)
           if (!file) return null
-          if (type === 'mode') return file.raw.replace(/"/g, '')
           return file.raw
         } catch (e) {
           console.error(`Error getting file from drive: ${path}`, e)
@@ -106,11 +112,7 @@ async function graph_explorer(opts) {
       }))
       // Call the appropriate handler based on `type`.
       const func = on[type]
-      if (type === 'mode') {
-        func ? func(data[0]) : fail(data, type)
-      } else {
-        func ? func({ data, type, paths }) : fail(data, type)
-      }
+      func ? func({ data, paths }) : fail(data, type)
     }
   }
 
@@ -217,11 +219,43 @@ async function graph_explorer(opts) {
     }
   }
 
-  function on_mode (new_mode) {
-    if (!new_mode || mode === new_mode) return
-    mode = new_mode
+  function on_mode ({ data, paths }) {
+    let new_current_mode
+    let new_previous_mode
+    let new_search_query
+
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i]
+      const raw_data = data[i]
+      if (raw_data === null) continue
+      let value
+      try {
+        value = JSON.parse(raw_data)
+      } catch (e) {
+        console.error(`Failed to parse JSON for ${path}:`, e)
+        continue
+      }
+      if (path.endsWith('current_mode.json')) new_current_mode = value
+      else if (path.endsWith('previous_mode.json')) new_previous_mode = value
+      else if (path.endsWith('search_query.json')) new_search_query = value
+    }
+
+    if (typeof new_search_query === 'string') search_query = new_search_query
+    if (new_previous_mode) previous_mode = new_previous_mode
+    if (new_current_mode === 'search' && !search_query) {
+      search_state_instances = instance_states
+    }
+    if (!new_current_mode || mode === new_current_mode) return
+
+    if (mode && new_current_mode === 'search') {
+      update_mode_state('previous_mode', mode)
+    }
+    mode = new_current_mode
     render_menubar()
     handle_mode_change()
+    if (mode === 'search' && search_query) {
+      perform_search(search_query)
+    }
   }
 
   function inject_style({ data }) {
@@ -239,11 +273,11 @@ async function graph_explorer(opts) {
     }
   }
 
-  async function update_mode_state (value) {
+  async function update_mode_state (name, value) {
     try {
-      await drive.put('mode/current_mode.json', JSON.stringify(value))
+      await drive.put(`mode/${name}.json`, JSON.stringify(value))
     } catch (e) {
-      console.error('Failed to update mode state:', e)
+      console.error(`Failed to update mode state for ${name}:`, e)
     }
   }
 
@@ -657,8 +691,9 @@ async function graph_explorer(opts) {
       search_input.placeholder = 'Search entries...'
       search_input.className = 'search-input'
       search_input.oninput = on_search_input
+      search_input.value = search_query
       menubar.appendChild(search_input)
-      search_input.focus()
+      requestAnimationFrame(() => search_input.focus())
     }
   }
 
@@ -668,18 +703,26 @@ async function graph_explorer(opts) {
     } else {
       menubar.style.display = 'flex'
     }
-    if (mode !== 'search') {
-      build_and_render_view()
-    }
+    build_and_render_view()
   }
 
   function toggle_search_mode () {
-    const new_mode = mode === 'search' ? 'menubar' : 'search'
-    update_mode_state(new_mode)
+    const new_mode = mode === 'search' ? previous_mode : 'search'
+    if (mode === 'search') {
+      search_query = ''
+      drive_updated_by_search = true
+      update_mode_state('search_query', '')
+    }
+    update_mode_state('current_mode', new_mode)
+    search_state_instances = instance_states
   }
 
   function on_search_input (event) {
     const query = event.target.value.trim()
+    search_query = query
+    drive_updated_by_search = true
+    update_mode_state('search_query', query)
+    if (query === '') search_state_instances = instance_states
     perform_search(query)
   }
 
@@ -822,6 +865,7 @@ async function graph_explorer(opts) {
       }
       drive_updated_by_toggle = true
       update_runtime_state('instance_states', instance_states)
+      update_mode_state('current_mode', previous_mode)
     }
 
     if (ev.ctrlKey) {
@@ -1142,7 +1186,9 @@ function fallback_module() {
           'instance_states.json': { raw: '{}' }
         },
         'mode/': {
-          'current_mode.json': { raw: '"menubar"' }
+          'current_mode.json': { raw: '"menubar"' },
+          'previous_mode.json': { raw: '"menubar"' },
+          'search_query.json': { raw: '""' }
         }
       }
     }
