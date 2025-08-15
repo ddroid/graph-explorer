@@ -9,11 +9,13 @@ const app = require('..')
 const sheet = new CSSStyleSheet()
 config().then(() => boot({ sid: '' }))
 
-async function config() {
-  const path = path => new URL(`../src/node_modules/${path}`, `file://${__dirname}`).href.slice(8)
+async function config () {
+  const path = path =>
+    new URL(`../src/node_modules/${path}`, `file://${__dirname}`).href.slice(8)
   const html = document.documentElement
   const meta = document.createElement('meta')
-  const font = 'https://fonts.googleapis.com/css?family=Nunito:300,400,700,900|Slackey&display=swap'
+  const font =
+    'https://fonts.googleapis.com/css?family=Nunito:300,400,700,900|Slackey&display=swap'
   const loadFont = `<link href=${font} rel='stylesheet' type='text/css'>`
   html.setAttribute('lang', 'en')
   meta.setAttribute('name', 'viewport')
@@ -27,7 +29,7 @@ async function config() {
 /******************************************************************************
   PAGE BOOT
 ******************************************************************************/
-async function boot(opts) {
+async function boot (opts) {
   // ----------------------------------------
   // ID + JSON STATE
   // ----------------------------------------
@@ -48,35 +50,38 @@ async function boot(opts) {
   // ----------------------------------------
   // ELEMENTS
   // ----------------------------------------
-  { // desktop
+  {
+    // desktop
     shadow.append(await app(subs[0]))
   }
   // ----------------------------------------
   // INIT
   // ----------------------------------------
 
-  async function onbatch(batch) {
-    for (const {type, paths} of batch) {
-      const data = await Promise.all(paths.map(path => drive.get(path).then(file => file.raw)))
+  async function onbatch (batch) {
+    for (const { type, paths } of batch) {
+      const data = await Promise.all(
+        paths.map(path => drive.get(path).then(file => file.raw))
+      )
       on[type] && on[type](data)
     }
   }
 }
-async function inject(data) {
+async function inject (data) {
   sheet.replaceSync(data.join('\n'))
 }
 
 function fallback_module () {
   return {
     _: {
-      '..': { 
-        $: '', 
+      '..': {
+        $: '',
         0: '',
         mapping: {
-          'style': 'style',
-          'entries': 'entries',
-          'runtime': 'runtime',
-          'mode': 'mode'
+          style: 'style',
+          entries: 'entries',
+          runtime: 'runtime',
+          mode: 'mode'
         }
       }
     },

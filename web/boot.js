@@ -9,11 +9,13 @@ if (!has_save) {
   localStorage.clear()
 }
 
-fetch(init_url, fetch_opts).then(res => res.text()).then(async source => {
-  const module = { exports: {} }
-  const f = new Function('module', 'require', source)
-  f(module, require)
-  const init = module.exports
-  await init(args, prefix)
-  require('./page') // or whatever is otherwise the main entry of our project
-})
+fetch(init_url, fetch_opts)
+  .then(res => res.text())
+  .then(async source => {
+    const module = { exports: {} }
+    const f = new Function('module', 'require', source)
+    f(module, require)
+    const init = module.exports
+    await init(args, prefix)
+    require('./page') // or whatever is otherwise the main entry of our project
+  })

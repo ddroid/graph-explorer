@@ -8,8 +8,8 @@ const { get } = statedb(fallback_module)
 
 module.exports = graph_explorer
 
-async function graph_explorer(opts) {
-/******************************************************************************
+async function graph_explorer (opts) {
+  /******************************************************************************
   1. COMPONENT INITIALIZATION
     - This sets up the initial state, variables, and the basic DOM structure.
     - It also initializes the IntersectionObserver for virtual scrolling and
@@ -48,7 +48,7 @@ async function graph_explorer(opts) {
   const container = shadow.querySelector('.graph-container')
 
   document.body.style.margin = 0
-  
+
   let scroll_update_pending = false
   container.onscroll = onscroll
 
@@ -60,7 +60,7 @@ async function graph_explorer(opts) {
 
   const top_sentinel = document.createElement('div')
   const bottom_sentinel = document.createElement('div')
-  
+
   const observer = new IntersectionObserver(handle_sentinel_intersection, {
     root: container,
     rootMargin: '500px 0px',
@@ -78,12 +78,12 @@ async function graph_explorer(opts) {
 
   return el
 
-/******************************************************************************
+  /******************************************************************************
   2. STATE AND DATA HANDLING
     - These functions process incoming data from the STATE module's `sdb.watch`.
     - `onbatch` is the primary entry point.
 ******************************************************************************/
-  async function onbatch(batch) {
+  async function onbatch (batch) {
     // Prevent feedback loops from scroll or toggle actions.
     if (drive_updated_by_scroll) {
       drive_updated_by_scroll = false
@@ -100,32 +100,37 @@ async function graph_explorer(opts) {
 
     for (const { type, paths } of batch) {
       if (!paths || paths.length === 0) continue
-      const data = await Promise.all(paths.map(async (path) => {
-        try {
-          const file = await drive.get(path)
-          if (!file) return null
-          return file.raw
-        } catch (e) {
-          console.error(`Error getting file from drive: ${path}`, e)
-          return null
-        }
-      }))
+      const data = await Promise.all(
+        paths.map(async path => {
+          try {
+            const file = await drive.get(path)
+            if (!file) return null
+            return file.raw
+          } catch (e) {
+            console.error(`Error getting file from drive: ${path}`, e)
+            return null
+          }
+        })
+      )
       // Call the appropriate handler based on `type`.
       const func = on[type]
       func ? func({ data, paths }) : fail(data, type)
     }
   }
 
-  function fail (data, type) { throw new Error(`Invalid message type: ${type}`, { cause: { data, type } }) }
+  function fail (data, type) {
+    throw new Error(`Invalid message type: ${type}`, { cause: { data, type } })
+  }
 
-  function on_entries({ data }) {
+  function on_entries ({ data }) {
     if (!data || data[0] === null || data[0] === undefined) {
       console.error('Entries data is missing or empty.')
       all_entries = {}
       return
     }
     try {
-      const parsed_data = typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
+      const parsed_data =
+        typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
       if (typeof parsed_data !== 'object' || parsed_data === null) {
         console.error('Parsed entries data is not a valid object.')
         all_entries = {}
@@ -137,13 +142,16 @@ async function graph_explorer(opts) {
       all_entries = {}
       return
     }
-  
+
     // After receiving entries, ensure the root node state is initialized and trigger the first render.
     const root_path = '/'
     if (all_entries[root_path]) {
       const root_instance_path = '|/'
       if (!instance_states[root_instance_path]) {
-        instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
+        instance_states[root_instance_path] = {
+          expanded_subs: true,
+          expanded_hubs: false
+        }
       }
       build_and_render_view()
     } else {
@@ -160,7 +168,7 @@ async function graph_explorer(opts) {
     for (let i = 0; i < paths.length; i++) {
       const path = paths[i]
       if (data[i] === null) continue
-      
+
       let value
       try {
         value = typeof data[i] === 'string' ? JSON.parse(data[i]) : data[i]
@@ -184,10 +192,15 @@ async function graph_explorer(opts) {
           if (Array.isArray(value)) {
             selected_instance_paths = value
           } else {
-            console.warn('selected_instance_paths is not an array, defaulting to empty.', value)
+            console.warn(
+              'selected_instance_paths is not an array, defaulting to empty.',
+              value
+            )
             selected_instance_paths = []
           }
-          const changed_paths = [...new Set([...old_paths, ...selected_instance_paths])]
+          const changed_paths = [
+            ...new Set([...old_paths, ...selected_instance_paths])
+          ]
           changed_paths.forEach(p => render_nodes_needed.add(p))
           break
         }
@@ -196,19 +209,32 @@ async function graph_explorer(opts) {
           if (Array.isArray(value)) {
             confirmed_instance_paths = value
           } else {
-            console.warn('confirmed_selected is not an array, defaulting to empty.', value)
+            console.warn(
+              'confirmed_selected is not an array, defaulting to empty.',
+              value
+            )
             confirmed_instance_paths = []
           }
-          const changed_paths = [...new Set([...old_paths, ...confirmed_instance_paths])]
+          const changed_paths = [
+            ...new Set([...old_paths, ...confirmed_instance_paths])
+          ]
           changed_paths.forEach(p => render_nodes_needed.add(p))
           break
         }
         case path.endsWith('instance_states.json'):
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-          instance_states = value
-          needs_render = true
-        } else console.warn('instance_states is not a valid object, ignoring.', value)
-        break
+          if (
+            typeof value === 'object' &&
+            value !== null &&
+            !Array.isArray(value)
+          ) {
+            instance_states = value
+            needs_render = true
+          } else
+            console.warn(
+              'instance_states is not a valid object, ignoring.',
+              value
+            )
+          break
       }
     }
 
@@ -258,7 +284,7 @@ async function graph_explorer(opts) {
     }
   }
 
-  function inject_style({ data }) {
+  function inject_style ({ data }) {
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(data[0])
     shadow.adoptedStyleSheets = [sheet]
@@ -281,13 +307,13 @@ async function graph_explorer(opts) {
     }
   }
 
-/******************************************************************************
+  /******************************************************************************
   3. VIEW AND RENDERING LOGIC
     - These functions build the `view` array and render the DOM.
     - `build_and_render_view` is the main orchestrator.
     - `build_view_recursive` creates the flat `view` array from the hierarchical data.
 ******************************************************************************/
-  function build_and_render_view(focal_instance_path, hub_toggle = false) {
+  function build_and_render_view (focal_instance_path, hub_toggle = false) {
     if (Object.keys(all_entries).length === 0) {
       console.warn('No entries available to render.')
       return
@@ -306,7 +332,7 @@ async function graph_explorer(opts) {
       base_path: '/',
       parent_instance_path: '',
       depth: 0,
-      is_last_sub : true,
+      is_last_sub: true,
       is_hub: false,
       parent_pipe_trail: [],
       instance_states,
@@ -317,12 +343,16 @@ async function graph_explorer(opts) {
     let new_scroll_top = old_scroll_top
     if (focal_instance_path) {
       // If an action was focused on a specific node (like a toggle), try to keep it in the same position.
-      const old_toggled_node_index = old_view.findIndex(node => node.instance_path === focal_instance_path)
-      const new_toggled_node_index = view.findIndex(node => node.instance_path === focal_instance_path)
+      const old_toggled_node_index = old_view.findIndex(
+        node => node.instance_path === focal_instance_path
+      )
+      const new_toggled_node_index = view.findIndex(
+        node => node.instance_path === focal_instance_path
+      )
 
       if (old_toggled_node_index !== -1 && new_toggled_node_index !== -1) {
         const index_change = new_toggled_node_index - old_toggled_node_index
-        new_scroll_top = old_scroll_top + (index_change * node_height)
+        new_scroll_top = old_scroll_top + index_change * node_height
       }
     } else if (old_view.length > 0) {
       // Otherwise, try to keep the topmost visible node in the same position.
@@ -330,14 +360,19 @@ async function graph_explorer(opts) {
       const scroll_offset = old_scroll_top % node_height
       const old_top_node = old_view[old_top_node_index]
       if (old_top_node) {
-        const new_top_node_index = view.findIndex(node => node.instance_path === old_top_node.instance_path)
+        const new_top_node_index = view.findIndex(
+          node => node.instance_path === old_top_node.instance_path
+        )
         if (new_top_node_index !== -1) {
-          new_scroll_top = (new_top_node_index * node_height) + scroll_offset
+          new_scroll_top = new_top_node_index * node_height + scroll_offset
         }
       }
     }
 
-    const render_anchor_index = Math.max(0, Math.floor(new_scroll_top / node_height))
+    const render_anchor_index = Math.max(
+      0,
+      Math.floor(new_scroll_top / node_height)
+    )
     start_index = Math.max(0, render_anchor_index - chunk_size)
     end_index = Math.min(view.length, render_anchor_index + chunk_size)
 
@@ -353,7 +388,9 @@ async function graph_explorer(opts) {
     container.appendChild(bottom_sentinel)
 
     top_sentinel.style.height = `${start_index * node_height}px`
-    bottom_sentinel.style.height = `${(view.length - end_index) * node_height}px`
+    bottom_sentinel.style.height = `${
+      (view.length - end_index) * node_height
+    }px`
 
     observer.observe(top_sentinel)
     observer.observe(bottom_sentinel)
@@ -375,7 +412,7 @@ async function graph_explorer(opts) {
           const container_height = container.clientHeight
           const content_height = view.length * node_height
           const max_scroll_top = content_height - container_height
-          
+
           if (new_scroll_top > max_scroll_top) {
             spacer_initial_height = new_scroll_top - max_scroll_top
             spacer_initial_scroll_top = new_scroll_top
@@ -396,7 +433,7 @@ async function graph_explorer(opts) {
   }
 
   // Traverses the hierarchical `all_entries` data and builds a flat `view` array for rendering.
-  function build_view_recursive({
+  function build_view_recursive ({
     base_path,
     parent_instance_path,
     parent_base_path = null,
@@ -411,7 +448,7 @@ async function graph_explorer(opts) {
     const instance_path = `${parent_instance_path}|${base_path}`
     const entry = all_entries[base_path]
     if (!entry) return []
-    
+
     if (!instance_states[instance_path]) {
       instance_states[instance_path] = {
         expanded_subs: false,
@@ -419,16 +456,17 @@ async function graph_explorer(opts) {
       }
     }
     const state = instance_states[instance_path]
-    const is_hub_on_top = (base_path === all_entries[parent_base_path]?.hubs?.[0]) || (base_path === '/')
+    const is_hub_on_top =
+      base_path === all_entries[parent_base_path]?.hubs?.[0] ||
+      base_path === '/'
 
     // Calculate the pipe trail for drawing the tree lines. Quite complex logic here.
     const children_pipe_trail = [...parent_pipe_trail]
     let last_pipe = null
     if (depth > 0) {
-
       if (is_hub) {
         last_pipe = [...parent_pipe_trail]
-        if (is_last_sub) { 
+        if (is_last_sub) {
           children_pipe_trail.pop()
           children_pipe_trail.push(true)
           last_pipe.pop()
@@ -462,7 +500,7 @@ async function graph_explorer(opts) {
             parent_instance_path: instance_path,
             parent_base_path: base_path,
             depth: depth + 1,
-            is_last_sub : i === arr.length - 1,
+            is_last_sub: i === arr.length - 1,
             is_hub: true,
             is_first_hub: is_hub ? is_hub_on_top : false,
             parent_pipe_trail: children_pipe_trail,
@@ -479,7 +517,10 @@ async function graph_explorer(opts) {
       depth,
       is_last_sub,
       is_hub,
-      pipe_trail: ((is_hub && is_last_sub) || (is_hub && is_hub_on_top)) ? last_pipe : parent_pipe_trail,
+      pipe_trail:
+        (is_hub && is_last_sub) || (is_hub && is_hub_on_top)
+          ? last_pipe
+          : parent_pipe_trail,
       is_hub_on_top
     })
 
@@ -502,17 +543,30 @@ async function graph_explorer(opts) {
     }
     return current_view
   }
-  
-/******************************************************************************
+
+  /******************************************************************************
  4. NODE CREATION AND EVENT HANDLING
    - `create_node` generates the DOM element for a single node.
    - It sets up event handlers for user interactions like selecting or toggling.
 ******************************************************************************/
-  
-  function create_node({ base_path, instance_path, depth, is_last_sub, is_hub, pipe_trail, is_hub_on_top, is_search_match, is_direct_match, is_in_original_view }) {
+
+  function create_node ({
+    base_path,
+    instance_path,
+    depth,
+    is_last_sub,
+    is_hub,
+    pipe_trail,
+    is_hub_on_top,
+    is_search_match,
+    is_direct_match,
+    is_in_original_view
+  }) {
     const entry = all_entries[base_path]
     if (!entry) {
-      console.error(`Entry not found for path: ${base_path}. Cannot create node.`)
+      console.error(
+        `Entry not found for path: ${base_path}. Cannot create node.`
+      )
       const err_el = document.createElement('div')
       err_el.className = 'node error'
       err_el.textContent = `Error: Missing entry for ${base_path}`
@@ -522,7 +576,9 @@ async function graph_explorer(opts) {
     const states = mode === 'search' ? search_state_instances : instance_states
     let state = states[instance_path]
     if (!state) {
-      console.warn(`State not found for instance: ${instance_path}. Using default.`)
+      console.warn(
+        `State not found for instance: ${instance_path}. Using default.`
+      )
       state = { expanded_subs: false, expanded_hubs: false }
       states[instance_path] = state
     }
@@ -541,12 +597,14 @@ async function graph_explorer(opts) {
       }
     }
 
-    if (selected_instance_paths.includes(instance_path)) el.classList.add('selected')
-    if (confirmed_instance_paths.includes(instance_path)) el.classList.add('confirmed')
+    if (selected_instance_paths.includes(instance_path))
+      el.classList.add('selected')
+    if (confirmed_instance_paths.includes(instance_path))
+      el.classList.add('confirmed')
 
     const has_hubs = Array.isArray(entry.hubs) && entry.hubs.length > 0
     const has_subs = Array.isArray(entry.subs) && entry.subs.length > 0
-    
+
     if (depth) {
       el.style.paddingLeft = '17.5px'
     }
@@ -556,7 +614,8 @@ async function graph_explorer(opts) {
     if (base_path === '/' && instance_path === '|/') {
       const { expanded_subs } = state
       const prefix_class_name = expanded_subs ? 'tee-down' : 'line-h'
-      const prefix_class = has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
+      const prefix_class =
+        has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
       el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class} ${prefix_class_name}"></span><span class="name clickable">/🌐</span>`
 
       const wand_el = el.querySelector('.wand')
@@ -574,16 +633,31 @@ async function graph_explorer(opts) {
       }
 
       const name_el = el.querySelector('.name')
-      if (name_el) name_el.onclick = (ev) => select_node(ev, instance_path, base_path)
+      if (name_el)
+        name_el.onclick = ev => select_node(ev, instance_path, base_path)
 
       return el
     }
 
-    const prefix_class_name = get_prefix({ is_last_sub, has_subs, state, is_hub, is_hub_on_top })
-    const pipe_html = pipe_trail.map(should_pipe => `<span class="${should_pipe ? 'pipe' : 'blank'}"></span>`).join('')
-    
-    const prefix_class = has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
-    const icon_class = (has_hubs && base_path !== '/') && mode !== 'search' ? 'icon clickable' : 'icon'
+    const prefix_class_name = get_prefix({
+      is_last_sub,
+      has_subs,
+      state,
+      is_hub,
+      is_hub_on_top
+    })
+    const pipe_html = pipe_trail
+      .map(
+        should_pipe => `<span class="${should_pipe ? 'pipe' : 'blank'}"></span>`
+      )
+      .join('')
+
+    const prefix_class =
+      has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
+    const icon_class =
+      has_hubs && base_path !== '/' && mode !== 'search'
+        ? 'icon clickable'
+        : 'icon'
 
     el.innerHTML = `
     <span class="indent">${pipe_html}</span>
@@ -615,15 +689,22 @@ async function graph_explorer(opts) {
     }
 
     const name_el = el.querySelector('.name')
-    if (name_el) name_el.onclick = (ev) => select_node(ev, instance_path, base_path)
-    
-    if (selected_instance_paths.includes(instance_path) || confirmed_instance_paths.includes(instance_path)) {
+    if (name_el)
+      name_el.onclick = ev => select_node(ev, instance_path, base_path)
+
+    if (
+      selected_instance_paths.includes(instance_path) ||
+      confirmed_instance_paths.includes(instance_path)
+    ) {
       const checkbox_div = document.createElement('div')
       checkbox_div.className = 'confirm-wrapper'
       const is_confirmed = confirmed_instance_paths.includes(instance_path)
-      checkbox_div.innerHTML = `<input type="checkbox" ${is_confirmed ? 'checked' : ''}>`
+      checkbox_div.innerHTML = `<input type="checkbox" ${
+        is_confirmed ? 'checked' : ''
+      }>`
       const checkbox_input = checkbox_div.querySelector('input')
-      if (checkbox_input) checkbox_input.onchange = (ev) => handle_confirm(ev, instance_path)
+      if (checkbox_input)
+        checkbox_input.onchange = ev => handle_confirm(ev, instance_path)
       el.appendChild(checkbox_div)
     }
 
@@ -634,7 +715,9 @@ async function graph_explorer(opts) {
   function re_render_node (instance_path) {
     const node_data = view.find(n => n.instance_path === instance_path)
     if (node_data) {
-      const old_node_el = shadow.querySelector(`[data-instance_path="${CSS.escape(instance_path)}"]`)
+      const old_node_el = shadow.querySelector(
+        `[data-instance_path="${CSS.escape(instance_path)}"]`
+      )
       if (old_node_el) {
         const new_node_el = create_node(node_data)
         old_node_el.replaceWith(new_node_el)
@@ -643,7 +726,7 @@ async function graph_explorer(opts) {
   }
 
   // `get_prefix` determines which box-drawing character to use for the node's prefix. It gives the name of a specific CSS class.
-  function get_prefix({ is_last_sub, has_subs, state, is_hub, is_hub_on_top }) {
+  function get_prefix ({ is_last_sub, has_subs, state, is_hub, is_hub_on_top }) {
     if (!state) {
       console.error('get_prefix called with invalid state.')
       return 'middle-line'
@@ -664,17 +747,19 @@ async function graph_explorer(opts) {
     } else if (is_last_sub) {
       if (expanded_subs && expanded_hubs) return 'bottom-cross'
       if (expanded_subs) return 'bottom-tee-down'
-      if (expanded_hubs) return has_subs ? 'bottom-tee-up' : 'bottom-light-tee-up'
+      if (expanded_hubs)
+        return has_subs ? 'bottom-tee-up' : 'bottom-light-tee-up'
       return has_subs ? 'bottom-line' : 'bottom-light-line'
     } else {
       if (expanded_subs && expanded_hubs) return 'middle-cross'
       if (expanded_subs) return 'middle-tee-down'
-      if (expanded_hubs) return has_subs ? 'middle-tee-up' : 'middle-light-tee-up'
+      if (expanded_hubs)
+        return has_subs ? 'middle-tee-up' : 'middle-light-tee-up'
       return has_subs ? 'middle-line' : 'middle-light-line'
     }
   }
-  
-/******************************************************************************
+
+  /******************************************************************************
   5. MENUBAR AND SEARCH
 ******************************************************************************/
   function render_menubar () {
@@ -735,7 +820,7 @@ async function graph_explorer(opts) {
       base_path: '/',
       parent_instance_path: '',
       depth: 0,
-      is_last_sub : true,
+      is_last_sub: true,
       is_hub: false,
       parent_pipe_trail: [],
       instance_states,
@@ -747,7 +832,7 @@ async function graph_explorer(opts) {
       base_path: '/',
       parent_instance_path: '',
       depth: 0,
-      is_last_sub : true,
+      is_last_sub: true,
       is_hub: false,
       parent_pipe_trail: [],
       instance_states: search_state_instances, // Use a temporary state for search
@@ -757,7 +842,7 @@ async function graph_explorer(opts) {
     render_search_results(search_view, query)
   }
 
-  function build_search_view_recursive({
+  function build_search_view_recursive ({
     query,
     base_path,
     parent_instance_path,
@@ -773,27 +858,30 @@ async function graph_explorer(opts) {
     if (!entry) return []
 
     const instance_path = `${parent_instance_path}|${base_path}`
-    const is_direct_match = entry.name && entry.name.toLowerCase().includes(query.toLowerCase())
+    const is_direct_match =
+      entry.name && entry.name.toLowerCase().includes(query.toLowerCase())
 
     let sub_results = []
     if (Array.isArray(entry.subs)) {
       const children_pipe_trail = [...parent_pipe_trail]
       if (depth > 0) children_pipe_trail.push(!is_last_sub)
 
-      sub_results = entry.subs.map((sub_path, i, arr) => {
-        return build_search_view_recursive({
-          query,
-          base_path: sub_path,
-          parent_instance_path: instance_path,
-          depth: depth + 1,
-          is_last_sub: i === arr.length - 1,
-          is_hub: false,
-          parent_pipe_trail: children_pipe_trail,
-          instance_states,
-          all_entries,
-          original_view
+      sub_results = entry.subs
+        .map((sub_path, i, arr) => {
+          return build_search_view_recursive({
+            query,
+            base_path: sub_path,
+            parent_instance_path: instance_path,
+            depth: depth + 1,
+            is_last_sub: i === arr.length - 1,
+            is_hub: false,
+            parent_pipe_trail: children_pipe_trail,
+            instance_states,
+            all_entries,
+            original_view
+          })
         })
-      }).flat()
+        .flat()
     }
 
     const has_matching_descendant = sub_results.length > 0
@@ -807,7 +895,9 @@ async function graph_explorer(opts) {
       expanded_hubs: false
     }
 
-    const is_in_original_view = original_view.some(node => node.instance_path === instance_path)
+    const is_in_original_view = original_view.some(
+      node => node.instance_path === instance_path
+    )
 
     const current_node_view = {
       base_path,
@@ -844,21 +934,27 @@ async function graph_explorer(opts) {
     container.appendChild(fragment)
   }
 
-/******************************************************************************
+  /******************************************************************************
   6. VIEW MANIPULATION & USER ACTIONS
       - These functions handle user interactions like selecting, confirming,
         toggling, and resetting the graph.
   ******************************************************************************/
-  function select_node(ev, instance_path) {
+  function select_node (ev, instance_path) {
     if (mode === 'search') {
       let current_path = instance_path
       // Traverse up the tree to expand all parents
       while (current_path) {
-        const parent_path = current_path.substring(0, current_path.lastIndexOf('|'))
+        const parent_path = current_path.substring(
+          0,
+          current_path.lastIndexOf('|')
+        )
         if (!parent_path) break // Stop if there's no parent left
 
         if (!instance_states[parent_path]) {
-          instance_states[parent_path] = { expanded_subs: false, expanded_hubs: false }
+          instance_states[parent_path] = {
+            expanded_subs: false,
+            expanded_hubs: false
+          }
         }
         instance_states[parent_path].expanded_subs = true
         current_path = parent_path
@@ -882,7 +978,7 @@ async function graph_explorer(opts) {
     }
   }
 
-  function handle_confirm(ev, instance_path) {
+  function handle_confirm (ev, instance_path) {
     if (!ev.target) return console.warn('Checkbox event target is missing.')
     const is_checked = ev.target.checked
     const new_selected_paths = [...selected_instance_paths]
@@ -892,11 +988,11 @@ async function graph_explorer(opts) {
       const idx = new_selected_paths.indexOf(instance_path)
       if (idx > -1) new_selected_paths.splice(idx, 1)
       if (!new_confirmed_paths.includes(instance_path)) {
-          new_confirmed_paths.push(instance_path)
+        new_confirmed_paths.push(instance_path)
       }
     } else {
       if (!new_selected_paths.includes(instance_path)) {
-          new_selected_paths.push(instance_path)
+        new_selected_paths.push(instance_path)
       }
       const idx = new_confirmed_paths.indexOf(instance_path)
       if (idx > -1) new_confirmed_paths.splice(idx, 1)
@@ -905,10 +1001,15 @@ async function graph_explorer(opts) {
     update_runtime_state('confirmed_selected', new_confirmed_paths)
   }
 
-  function toggle_subs(instance_path) {
+  function toggle_subs (instance_path) {
     if (!instance_states[instance_path]) {
-      console.warn(`Toggling subs for non-existent state: ${instance_path}. Creating default state.`)
-      instance_states[instance_path] = { expanded_subs: false, expanded_hubs: false }
+      console.warn(
+        `Toggling subs for non-existent state: ${instance_path}. Creating default state.`
+      )
+      instance_states[instance_path] = {
+        expanded_subs: false,
+        expanded_hubs: false
+      }
     }
     const state = instance_states[instance_path]
     state.expanded_subs = !state.expanded_subs
@@ -918,10 +1019,15 @@ async function graph_explorer(opts) {
     update_runtime_state('instance_states', instance_states)
   }
 
-  function toggle_hubs(instance_path) {
+  function toggle_hubs (instance_path) {
     if (!instance_states[instance_path]) {
-      console.warn(`Toggling hubs for non-existent state: ${instance_path}. Creating default state.`)
-      instance_states[instance_path] = { expanded_subs: false, expanded_hubs: false }
+      console.warn(
+        `Toggling hubs for non-existent state: ${instance_path}. Creating default state.`
+      )
+      instance_states[instance_path] = {
+        expanded_subs: false,
+        expanded_hubs: false
+      }
     }
     const state = instance_states[instance_path]
     state.expanded_hubs ? hub_num-- : hub_num++
@@ -931,12 +1037,15 @@ async function graph_explorer(opts) {
     update_runtime_state('instance_states', instance_states)
   }
 
-  function reset() {
+  function reset () {
     const root_path = '/'
     const root_instance_path = '|/'
     const new_instance_states = {}
     if (all_entries[root_path]) {
-      new_instance_states[root_instance_path] = { expanded_subs: true, expanded_hubs: false }
+      new_instance_states[root_instance_path] = {
+        expanded_subs: true,
+        expanded_hubs: false
+      }
     }
     update_runtime_state('vertical_scroll_value', 0)
     update_runtime_state('horizontal_scroll_value', 0)
@@ -945,12 +1054,12 @@ async function graph_explorer(opts) {
     update_runtime_state('instance_states', new_instance_states)
   }
 
-/******************************************************************************
+  /******************************************************************************
   7. VIRTUAL SCROLLING
     - These functions implement virtual scrolling to handle large graphs
       efficiently using an IntersectionObserver.
 ******************************************************************************/
-  function onscroll() {
+  function onscroll () {
     if (scroll_update_pending) return
     scroll_update_pending = true
     requestAnimationFrame(() => {
@@ -979,12 +1088,15 @@ async function graph_explorer(opts) {
     })
   }
 
-  async function fill_viewport_downwards() {
+  async function fill_viewport_downwards () {
     if (is_rendering || end_index >= view.length) return
     is_rendering = true
     const container_rect = container.getBoundingClientRect()
     let sentinel_rect = bottom_sentinel.getBoundingClientRect()
-    while (end_index < view.length && sentinel_rect.top < container_rect.bottom + 500) {
+    while (
+      end_index < view.length &&
+      sentinel_rect.top < container_rect.bottom + 500
+    ) {
       render_next_chunk()
       await new Promise(resolve => requestAnimationFrame(resolve))
       sentinel_rect = bottom_sentinel.getBoundingClientRect()
@@ -992,7 +1104,7 @@ async function graph_explorer(opts) {
     is_rendering = false
   }
 
-  async function fill_viewport_upwards() {
+  async function fill_viewport_upwards () {
     if (is_rendering || start_index <= 0) return
     is_rendering = true
     const container_rect = container.getBoundingClientRect()
@@ -1005,7 +1117,7 @@ async function graph_explorer(opts) {
     is_rendering = false
   }
 
-  function handle_sentinel_intersection(entries) {
+  function handle_sentinel_intersection (entries) {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         if (entry.target === top_sentinel) fill_viewport_upwards()
@@ -1014,22 +1126,26 @@ async function graph_explorer(opts) {
     })
   }
 
-  function render_next_chunk() {
+  function render_next_chunk () {
     if (end_index >= view.length) return
     const fragment = document.createDocumentFragment()
     const next_end = Math.min(view.length, end_index + chunk_size)
-    for (let i = end_index; i < next_end; i++) if (view[i]) fragment.appendChild(create_node(view[i]))
+    for (let i = end_index; i < next_end; i++)
+      if (view[i]) fragment.appendChild(create_node(view[i]))
     container.insertBefore(fragment, bottom_sentinel)
     end_index = next_end
-    bottom_sentinel.style.height = `${(view.length - end_index) * node_height}px`
+    bottom_sentinel.style.height = `${
+      (view.length - end_index) * node_height
+    }px`
     cleanup_dom(false)
   }
 
-  function render_prev_chunk() {
+  function render_prev_chunk () {
     if (start_index <= 0) return
     const fragment = document.createDocumentFragment()
     const prev_start = Math.max(0, start_index - chunk_size)
-    for (let i = prev_start; i < start_index; i++) if (view[i]) fragment.appendChild(create_node(view[i]))
+    for (let i = prev_start; i < start_index; i++)
+      if (view[i]) fragment.appendChild(create_node(view[i]))
     container.insertBefore(fragment, top_sentinel.nextSibling)
     start_index = prev_start
     top_sentinel.style.height = `${start_index * node_height}px`
@@ -1037,7 +1153,7 @@ async function graph_explorer(opts) {
   }
 
   // Removes nodes from the DOM that are far outside the viewport.
-  function cleanup_dom(is_scrolling_up) {
+  function cleanup_dom (is_scrolling_up) {
     const rendered_count = end_index - start_index
     if (rendered_count <= max_rendered_nodes) return
 
@@ -1051,7 +1167,9 @@ async function graph_explorer(opts) {
         }
       }
       end_index -= to_remove_count
-      bottom_sentinel.style.height = `${(view.length - end_index) * node_height}px`
+      bottom_sentinel.style.height = `${
+        (view.length - end_index) * node_height
+      }px`
     } else {
       // If scrolling down, remove nodes from the top.
       for (let i = 0; i < to_remove_count; i++) {
@@ -1073,11 +1191,11 @@ async function graph_explorer(opts) {
     - It defines the default datasets (`entries`, `style`, `runtime`) and their
       initial values.
 ******************************************************************************/
-function fallback_module() {
+function fallback_module () {
   return {
     api: fallback_instance
   }
-  function fallback_instance() {
+  function fallback_instance () {
     return {
       drive: {
         'entries/': {
@@ -1194,6 +1312,7 @@ function fallback_module() {
     }
   }
 }
+
 }).call(this)}).call(this,"/lib/graph_explorer.js")
 },{"./STATE":1}],3:[function(require,module,exports){
 const prefix = 'https://raw.githubusercontent.com/alyhxn/playproject/main/'
@@ -1207,14 +1326,16 @@ if (!has_save) {
   localStorage.clear()
 }
 
-fetch(init_url, fetch_opts).then(res => res.text()).then(async source => {
-  const module = { exports: {} }
-  const f = new Function('module', 'require', source)
-  f(module, require)
-  const init = module.exports
-  await init(args, prefix)
-  require('./page') // or whatever is otherwise the main entry of our project
-})
+fetch(init_url, fetch_opts)
+  .then(res => res.text())
+  .then(async source => {
+    const module = { exports: {} }
+    const f = new Function('module', 'require', source)
+    f(module, require)
+    const init = module.exports
+    await init(args, prefix)
+    require('./page') // or whatever is otherwise the main entry of our project
+  })
 
 },{"./page":4}],4:[function(require,module,exports){
 (function (__filename,__dirname){(function (){
@@ -1229,11 +1350,13 @@ const app = require('..')
 const sheet = new CSSStyleSheet()
 config().then(() => boot({ sid: '' }))
 
-async function config() {
-  const path = path => new URL(`../src/node_modules/${path}`, `file://${__dirname}`).href.slice(8)
+async function config () {
+  const path = path =>
+    new URL(`../src/node_modules/${path}`, `file://${__dirname}`).href.slice(8)
   const html = document.documentElement
   const meta = document.createElement('meta')
-  const font = 'https://fonts.googleapis.com/css?family=Nunito:300,400,700,900|Slackey&display=swap'
+  const font =
+    'https://fonts.googleapis.com/css?family=Nunito:300,400,700,900|Slackey&display=swap'
   const loadFont = `<link href=${font} rel='stylesheet' type='text/css'>`
   html.setAttribute('lang', 'en')
   meta.setAttribute('name', 'viewport')
@@ -1247,7 +1370,7 @@ async function config() {
 /******************************************************************************
   PAGE BOOT
 ******************************************************************************/
-async function boot(opts) {
+async function boot (opts) {
   // ----------------------------------------
   // ID + JSON STATE
   // ----------------------------------------
@@ -1268,35 +1391,38 @@ async function boot(opts) {
   // ----------------------------------------
   // ELEMENTS
   // ----------------------------------------
-  { // desktop
+  {
+    // desktop
     shadow.append(await app(subs[0]))
   }
   // ----------------------------------------
   // INIT
   // ----------------------------------------
 
-  async function onbatch(batch) {
-    for (const {type, paths} of batch) {
-      const data = await Promise.all(paths.map(path => drive.get(path).then(file => file.raw)))
+  async function onbatch (batch) {
+    for (const { type, paths } of batch) {
+      const data = await Promise.all(
+        paths.map(path => drive.get(path).then(file => file.raw))
+      )
       on[type] && on[type](data)
     }
   }
 }
-async function inject(data) {
+async function inject (data) {
   sheet.replaceSync(data.join('\n'))
 }
 
 function fallback_module () {
   return {
     _: {
-      '..': { 
-        $: '', 
+      '..': {
+        $: '',
         0: '',
         mapping: {
-          'style': 'style',
-          'entries': 'entries',
-          'runtime': 'runtime',
-          'mode': 'mode'
+          style: 'style',
+          entries: 'entries',
+          runtime: 'runtime',
+          mode: 'mode'
         }
       }
     },
@@ -1306,5 +1432,6 @@ function fallback_module () {
     }
   }
 }
+
 }).call(this)}).call(this,"/web/page.js","/web")
 },{"..":2,"../lib/STATE":1}]},{},[3]);
