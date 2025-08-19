@@ -1,0 +1,90 @@
+
+.graph-container, .node {
+  font-family: monospace;
+}
+.graph-container {
+  color: #abb2bf;
+  background-color: #282c34;
+  padding: 10px;
+  height: 500px; /* Or make it flexible */
+  overflow: auto;
+}
+.node {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  cursor: default;
+}
+.node.error {
+  color: red;
+}
+.node.selected {
+  background-color: #776346;
+}
+.node.confirmed {
+  background-color: #774346;
+}
+.node.new-entry {
+  background-color: #87ceeb; /* sky blue */
+  color: #282c34;
+}
+.menubar {
+  display: flex;
+  padding: 5px;
+  background-color: #21252b;
+  border-bottom: 1px solid #181a1f;
+}
+.search-input {
+  margin-left: auto;
+  background-color: #282c34;
+  color: #abb2bf;
+  border: 1px solid #181a1f;
+}
+.confirm-wrapper {
+  margin-left: auto;
+  padding-left: 10px;
+}
+.indent {
+  display: flex;
+}
+.pipe {
+  text-align: center;
+}
+.pipe::before { content: '┃'; }
+.blank {
+  width: 8.5px;
+  text-align: center;
+}
+.clickable {
+  cursor: pointer;
+}
+.prefix, .icon {
+  margin-right: 2px;
+}
+.top-cross::before { content: '┏╋'; }
+.top-tee-down::before { content: '┏┳'; }
+.top-tee-up::before { content: '┏┻'; }
+.top-line::before { content: '┏━'; }
+.middle-cross::before { content: '┣╋'; }
+.middle-tee-down::before { content: '┣┳'; }
+.middle-tee-up::before { content: '┣┻'; }
+.middle-line::before { content: '┣━'; }
+.bottom-cross::before { content: '┗╋'; }
+.bottom-tee-down::before { content: '┗┳'; }
+.bottom-tee-up::before { content: '┗┻'; }
+.bottom-line::before { content: '┗━'; }
+.bottom-light-tee-up::before { content: '┖┸'; }
+.bottom-light-line::before { content: '┖─'; }
+.middle-light-tee-up::before { content: '┠┸'; }
+.middle-light-line::before { content: '┠─'; }
+.tee-down::before { content: '┳'; }
+.line-h::before { content: '━'; }
+.icon { display: inline-block; text-align: center; }
+.name { flex-grow: 1; }
+.node.type-root > .icon::before { content: '🌐'; }
+.node.type-folder > .icon::before { content: '📁'; }
+.node.type-html-file > .icon::before { content: '📄'; }
+.node.type-js-file > .icon::before { content: '📜'; }
+.node.type-css-file > .icon::before { content: '🎨'; }
+.node.type-json-file > .icon::before { content: '📝'; }
+.node.type-file > .icon::before { content: '📄'; }
