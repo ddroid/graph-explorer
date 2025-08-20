@@ -34,7 +34,6 @@ async function graph_explorer (opts) {
   let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
   let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
   let spacer_element = null // DOM element used to manage scroll position when hubs are toggled.
-  let spacer_initial_height = 0
   let hub_num = 0 // Counter for expanded hubs.
 
   const el = document.createElement('div')
@@ -909,16 +908,6 @@ function escape_regex (string) {
       return true
     }
     return false
-  }
-
-  function parse_json_data (data, path) {
-    if (data === null) return null
-    try {
-      return typeof data === 'string' ? JSON.parse(data) : data
-    } catch (e) {
-      console.error(`Failed to parse JSON for ${path}:`, e)
-      return null
-    }
   }
 
   function parse_json_data (data, path) {
