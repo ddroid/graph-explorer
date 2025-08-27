@@ -25,6 +25,7 @@ async function graph_explorer (opts) {
   let all_entries = {} // Holds the entire graph structure from entries.json.
   let instance_states = {} // Holds expansion state {expanded_subs, expanded_hubs} for each node instance.
   let search_state_instances = {}
+  let search_entry_states = {} // Holds expansion state for search mode interactions separately
   let view = [] // A flat array representing the visible nodes in the graph.
   let mode // Current mode of the graph explorer, can be set to 'default', 'menubar' or 'search'. Its value should be set by the `mode` file in the drive.
   let previous_mode = 'menubar'
@@ -34,6 +35,8 @@ async function graph_explorer (opts) {
   let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
   let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
   let spacer_element = null // DOM element used to manage scroll position when hubs are toggled.
+  let spacer_initial_height = 0
+  let spacer_initial_scroll_top = 0
   let hub_num = 0 // Counter for expanded hubs.
 
   const el = document.createElement('div')
@@ -188,6 +191,17 @@ async function graph_explorer (opts) {
             )
           }
           break
+        case path.endsWith('search_entry_states.json'):
+          if (typeof value === 'object' && value && !Array.isArray(value)) {
+            search_entry_states = value
+            if (mode === 'search') needs_render = true
+          } else {
+            console.warn(
+              'search_entry_states is not a valid object, ignoring.',
+              value
+            )
+          }
+          break
       }
     })
 
@@ -253,6 +267,82 @@ async function graph_explorer (opts) {
       states[instance_path] = { expanded_subs: false, expanded_hubs: false }
     }
     return states[instance_path]
+  }
+
+  function calculate_children_pipe_trail ({
+    depth,
+    is_hub,
+    is_last_sub,
+    is_first_hub = false,
+    parent_pipe_trail,
+    parent_base_path,
+    base_path,
+    all_entries
+  }) {
+    const children_pipe_trail = [...parent_pipe_trail]
+    const is_hub_on_top = base_path === all_entries[parent_base_path]?.hubs?.[0] || base_path === '/'
+
+    if (depth > 0) {
+      if (is_hub) {
+        if (is_last_sub) {
+          children_pipe_trail.pop()
+          children_pipe_trail.push(true)
+        }
+        if (is_hub_on_top && !is_last_sub) {
+          children_pipe_trail.pop()
+          children_pipe_trail.push(true)
+        }
+        if (is_first_hub) {
+          children_pipe_trail.pop()
+          children_pipe_trail.push(false)
+          if (mode === 'search') {
+            children_pipe_trail.pop()
+            children_pipe_trail.push(is_last_sub)
+          }
+        }
+      }
+      children_pipe_trail.push(is_hub || !is_last_sub)
+    }
+    return { children_pipe_trail, is_hub_on_top }
+  }
+
+  // Extracted pipe logic for reuse in both default and search modes
+  function calculate_pipe_trail ({
+    depth,
+    is_hub,
+    is_last_sub,
+    is_first_hub = false,
+    is_hub_on_top,
+    parent_pipe_trail,
+    parent_base_path,
+    base_path,
+    all_entries
+  }) {
+    let last_pipe = null
+    const calculated_is_hub_on_top = base_path === all_entries[parent_base_path]?.hubs?.[0] || base_path === '/'
+    const final_is_hub_on_top = is_hub_on_top !== undefined ? is_hub_on_top : calculated_is_hub_on_top
+
+    if (depth > 0) {
+      if (is_hub) {
+        last_pipe = [...parent_pipe_trail]
+        if (is_last_sub) {
+          last_pipe.pop()
+          last_pipe.push(true)
+          if (is_first_hub) {
+            last_pipe.pop()
+            last_pipe.push(false)
+          }
+        }
+        if (final_is_hub_on_top && !is_last_sub) {
+          last_pipe.pop()
+          last_pipe.push(true)
+        }
+      }
+    }
+
+    const pipe_trail = (is_hub && is_last_sub) || (is_hub && final_is_hub_on_top) ? last_pipe : parent_pipe_trail
+    const product = { pipe_trail, is_hub_on_top: final_is_hub_on_top } 
+    return product
   }
 
   /******************************************************************************
@@ -336,38 +426,17 @@ async function graph_explorer (opts) {
     if (!entry) return []
 
     const state = get_or_create_state(instance_states, instance_path)
-    const is_hub_on_top =
-      base_path === all_entries[parent_base_path]?.hubs?.[0] || base_path === '/'
-
-    // Calculate the pipe trail for drawing the tree lines. Quite complex logic here.
-    const children_pipe_trail = [...parent_pipe_trail]
-    let last_pipe = null
-    if (depth > 0) {
-      if (is_hub) {
-        last_pipe = [...parent_pipe_trail]
-        if (is_last_sub) {
-          children_pipe_trail.pop()
-          children_pipe_trail.push(true)
-          last_pipe.pop()
-          last_pipe.push(true)
-          if (is_first_hub) {
-            last_pipe.pop()
-            last_pipe.push(false)
-          }
-        }
-        if (is_hub_on_top && !is_last_sub) {
-          last_pipe.pop()
-          last_pipe.push(true)
-          children_pipe_trail.pop()
-          children_pipe_trail.push(true)
-        }
-        if (is_first_hub) {
-          children_pipe_trail.pop()
-          children_pipe_trail.push(false)
-        }
-      }
-      children_pipe_trail.push(is_hub || !is_last_sub)
-    }
+    
+    const { children_pipe_trail, is_hub_on_top } = calculate_children_pipe_trail({
+      depth,
+      is_hub,
+      is_last_sub,
+      is_first_hub,
+      parent_pipe_trail,
+      parent_base_path,
+      base_path,
+      all_entries
+    })
 
     let current_view = []
     // If hubs are expanded, recursively add them to the view first (they appear above the node).
@@ -396,11 +465,9 @@ async function graph_explorer (opts) {
       depth,
       is_last_sub,
       is_hub,
-      pipe_trail:
-        (is_hub && is_last_sub) || (is_hub && is_hub_on_top)
-          ? last_pipe
-          : parent_pipe_trail,
-      is_hub_on_top
+      is_first_hub,
+      parent_pipe_trail,
+      parent_base_path
     })
 
     // If subs are expanded, recursively add them to the view (they appear below the node).
@@ -410,6 +477,7 @@ async function graph_explorer (opts) {
           ...build_view_recursive({
             base_path: sub_path,
             parent_instance_path: instance_path,
+            parent_base_path: base_path,
             depth: depth + 1,
             is_last_sub: i === arr.length - 1,
             is_hub: false,
@@ -435,8 +503,9 @@ async function graph_explorer (opts) {
     depth,
     is_last_sub,
     is_hub,
-    pipe_trail,
-    is_hub_on_top,
+    is_first_hub,
+    parent_pipe_trail,
+    parent_base_path,
     is_search_match,
     is_direct_match,
     is_in_original_view,
@@ -452,6 +521,18 @@ async function graph_explorer (opts) {
 
     const states = mode === 'search' ? search_state_instances : instance_states
     const state = get_or_create_state(states, instance_path)
+
+    const { pipe_trail, is_hub_on_top } = calculate_pipe_trail({
+      depth,
+      is_hub,
+      is_last_sub,
+      is_first_hub,
+      parent_pipe_trail,
+      parent_base_path,
+      base_path,
+      all_entries
+    })
+
     const el = document.createElement('div')
     el.className = `node type-${entry.type || 'unknown'}`
     el.dataset.instance_path = instance_path
@@ -475,8 +556,8 @@ async function graph_explorer (opts) {
 
     const prefix_class_name = get_prefix({ is_last_sub, has_subs, state, is_hub, is_hub_on_top })
     const pipe_html = pipe_trail.map(p => `<span class="${p ? 'pipe' : 'blank'}"></span>`).join('')
-    const prefix_class = has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
-    const icon_class = has_hubs && base_path !== '/' && mode !== 'search' ? 'icon clickable' : 'icon'
+    const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
+    const icon_class = has_hubs && base_path !== '/' ? 'icon clickable' : 'icon'
     const entry_name = entry.name || base_path
     const name_html = (is_direct_match && query)
       ? get_highlighted_name(entry_name, query)
@@ -490,10 +571,18 @@ async function graph_explorer (opts) {
     `
 
     const icon_el = el.querySelector('.icon')
-    if (icon_el && has_hubs && base_path !== '/') icon_el.onclick = mode !== 'search' ? () => toggle_hubs(instance_path) : null
+    if (icon_el && has_hubs && base_path !== '/') {
+      icon_el.onclick = mode === 'search' 
+        ? () => toggle_search_hubs(instance_path) 
+        : () => toggle_hubs(instance_path)
+    }
 
     const prefix_el = el.querySelector('.prefix')
-    if (prefix_el && has_subs) prefix_el.onclick = mode !== 'search' ? () => toggle_subs(instance_path) : null
+    if (prefix_el && has_subs) {
+      prefix_el.onclick = mode === 'search' 
+        ? () => toggle_search_subs(instance_path) 
+        : () => toggle_subs(instance_path)
+    }
 
     el.querySelector('.name').onclick = ev => select_node(ev, instance_path)
 
@@ -605,18 +694,21 @@ async function graph_explorer (opts) {
       instance_states,
       all_entries
     })
+    const original_view_paths = original_view.map(n => n.instance_path)
     search_state_instances = {}
     const search_view = build_search_view_recursive({
       query,
       base_path: '/',
       parent_instance_path: '',
+      parent_base_path: null,
       depth: 0,
       is_last_sub: true,
       is_hub: false,
+      is_first_hub: false,
       parent_pipe_trail: [],
-      instance_states: search_state_instances, // Use a temporary state for search
+      instance_states: search_state_instances,
       all_entries,
-      original_view
+      original_view_paths
     })
     render_search_results(search_view, query)
   }
@@ -625,13 +717,16 @@ async function graph_explorer (opts) {
     query,
     base_path,
     parent_instance_path,
+    parent_base_path = null,
     depth,
     is_last_sub,
     is_hub,
+    is_first_hub = false,
     parent_pipe_trail,
     instance_states,
     all_entries,
-    original_view
+    original_view_paths,
+    is_expanded_child = false
   }) {
     const entry = all_entries[base_path]
     if (!entry) return []
@@ -639,29 +734,94 @@ async function graph_explorer (opts) {
     const instance_path = `${parent_instance_path}|${base_path}`
     const is_direct_match = entry.name && entry.name.toLowerCase().includes(query.toLowerCase())
 
-    const children_pipe_trail = [...parent_pipe_trail]
-    if (depth > 0) children_pipe_trail.push(!is_last_sub)
+    // Use extracted pipe logic for consistent rendering
+    const { children_pipe_trail, is_hub_on_top } = calculate_children_pipe_trail({
+      depth,
+      is_hub,
+      is_last_sub,
+      is_first_hub,
+      parent_pipe_trail,
+      parent_base_path,
+      base_path,
+      all_entries
+    })
 
-    const sub_results = (entry.subs || []).flatMap((sub_path, i, arr) =>
-      build_search_view_recursive({
+    // Process hubs if they should be expanded
+    const search_state = search_entry_states[instance_path]
+    const should_expand_hubs = search_state ? search_state.expanded_hubs : false
+    const should_expand_subs = search_state ? search_state.expanded_subs : false
+
+    // Process hubs: if manually expanded, show ALL hubs regardless of search match
+    const hub_results = (should_expand_hubs ? (entry.hubs || []) : []).flatMap((hub_path, i, arr) => {
+      return build_search_view_recursive({
         query,
-        base_path: sub_path,
+        base_path: hub_path,
         parent_instance_path: instance_path,
+        parent_base_path: base_path,
         depth: depth + 1,
         is_last_sub: i === arr.length - 1,
-        is_hub: false,
+        is_hub: true,
+        is_first_hub: i === 0,
         parent_pipe_trail: children_pipe_trail,
         instance_states,
         all_entries,
-        original_view
+        original_view_paths,
+        is_expanded_child: true
       })
-    )
+    })
+
+    // Handle subs: if manually expanded, show ALL children; otherwise, search through them
+    let sub_results = []
+    if (should_expand_subs) {
+      // Show ALL subs when manually expanded
+      sub_results = (entry.subs || []).flatMap((sub_path, i, arr) => {
+        return build_search_view_recursive({
+          query,
+          base_path: sub_path,
+          parent_instance_path: instance_path,
+          parent_base_path: base_path,
+          depth: depth + 1,
+          is_last_sub: i === arr.length - 1,
+          is_hub: false,
+          is_first_hub: false,
+          parent_pipe_trail: children_pipe_trail,
+          instance_states,
+          all_entries,
+          original_view_paths,
+          is_expanded_child: true
+        })
+      })
+    } else if (!is_expanded_child) {
+      // Only search through subs if this node itself isn't an expanded child
+      sub_results = (entry.subs || []).flatMap((sub_path, i, arr) =>
+        build_search_view_recursive({
+          query,
+          base_path: sub_path,
+          parent_instance_path: instance_path,
+          parent_base_path: base_path,
+          depth: depth + 1,
+          is_last_sub: i === arr.length - 1,
+          is_hub: false,
+          is_first_hub: false,
+          parent_pipe_trail: children_pipe_trail,
+          instance_states,
+          all_entries,
+          original_view_paths
+        })
+      )
+    }
 
     const has_matching_descendant = sub_results.length > 0
-    if (!is_direct_match && !has_matching_descendant) return []
 
-    instance_states[instance_path] = { expanded_subs: has_matching_descendant, expanded_hubs: false }
-    const is_in_original_view = original_view.some(node => node.instance_path === instance_path)
+    // If this is an expanded child, always include it regardless of search match
+    if (!is_expanded_child && !is_direct_match && !has_matching_descendant) return []
+
+    // Set instance states for rendering
+    const final_expand_subs = search_state ? search_state.expanded_subs : has_matching_descendant
+    const final_expand_hubs = search_state ? search_state.expanded_hubs : false
+
+    instance_states[instance_path] = { expanded_subs: final_expand_subs, expanded_hubs: final_expand_hubs }
+    const is_in_original_view = original_view_paths.includes(instance_path)
 
     const current_node_view = {
       base_path,
@@ -669,14 +829,15 @@ async function graph_explorer (opts) {
       depth,
       is_last_sub,
       is_hub,
-      pipe_trail: parent_pipe_trail,
-      is_hub_on_top: false,
+      is_first_hub,
+      parent_pipe_trail,
+      parent_base_path,
       is_search_match: true,
       is_direct_match,
       is_in_original_view
     }
 
-    return [current_node_view, ...sub_results]
+    return [...hub_results, current_node_view, ...sub_results]
   }
 
   function render_search_results (search_view, query) {
@@ -698,20 +859,6 @@ async function graph_explorer (opts) {
         toggling, and resetting the graph.
   ******************************************************************************/
   function select_node (ev, instance_path) {
-    if (mode === 'search') {
-      let current_path = instance_path
-      // Traverse up the tree to expand all parents
-      while (current_path) {
-        const parent_path = current_path.substring(0, current_path.lastIndexOf('|'))
-        if (!parent_path) break
-        get_or_create_state(instance_states, parent_path).expanded_subs = true
-        current_path = parent_path
-      }
-      drive_updated_by_toggle = true
-      update_drive_state({ dataset: 'runtime', name: 'instance_states', value: instance_states })
-      update_drive_state({ dataset: 'mode', name: 'current_mode', value: previous_mode })
-    }
-
     const new_selected = new Set(selected_instance_paths)
     if (ev.ctrlKey) {
       new_selected.has(instance_path) ? new_selected.delete(instance_path) : new_selected.add(instance_path)
@@ -757,6 +904,22 @@ async function graph_explorer (opts) {
     update_drive_state({ dataset: 'runtime', name: 'instance_states', value: instance_states })
   }
 
+  function toggle_search_subs (instance_path) {
+    const state = get_or_create_state(search_entry_states, instance_path)
+    state.expanded_subs = !state.expanded_subs
+    perform_search(search_query) // Re-render search results with new state
+    drive_updated_by_toggle = true
+    update_drive_state({ dataset: 'runtime', name: 'search_entry_states', value: search_entry_states })
+  }
+
+  function toggle_search_hubs (instance_path) {
+    const state = get_or_create_state(search_entry_states, instance_path)
+    state.expanded_hubs = !state.expanded_hubs
+    perform_search(search_query) // Re-render search results with new state
+    drive_updated_by_toggle = true
+    update_drive_state({ dataset: 'runtime', name: 'search_entry_states', value: search_entry_states })
+  }
+
   function reset () {
     const root_instance_path = '|/'
     const new_instance_states = {
@@ -784,6 +947,7 @@ async function graph_explorer (opts) {
         spacer_element.remove()
         spacer_element = null
         spacer_initial_height = 0
+        spacer_initial_scroll_top = 0
         hub_num = 0
       }
 
@@ -960,9 +1124,14 @@ function escape_regex (string) {
 
       if (hub_toggle) {
         requestAnimationFrame(() => {
-          const max_scroll = container.scrollHeight - container.clientHeight
-          if (new_scroll_top > max_scroll) {
-            spacer_element.style.height = `${new_scroll_top - max_scroll}px`
+          const container_height = container.clientHeight
+          const content_height = view.length * node_height
+          const max_scroll_top = content_height - container_height
+
+          if (new_scroll_top > max_scroll_top) {
+            spacer_initial_height = new_scroll_top - max_scroll_top
+            spacer_initial_scroll_top = new_scroll_top
+            spacer_element.style.height = `${spacer_initial_height}px`
           }
           sync_fn()
         })
@@ -973,6 +1142,7 @@ function escape_regex (string) {
     } else {
       spacer_element = null
       spacer_initial_height = 0
+      spacer_initial_scroll_top = 0
       requestAnimationFrame(sync_fn)
     }
   }
@@ -982,14 +1152,18 @@ function escape_regex (string) {
     const el = document.createElement('div')
     el.className = 'node type-root'
     el.dataset.instance_path = instance_path
-    const prefix_class = has_subs && mode !== 'search' ? 'prefix clickable' : 'prefix'
+    const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
     const prefix_name = state.expanded_subs ? 'tee-down' : 'line-h'
     el.innerHTML = `<div class="wand">🪄</div><span class="${prefix_class} ${prefix_name}"></span><span class="name clickable">/🌐</span>`
 
     el.querySelector('.wand').onclick = reset
     if (has_subs) {
       const prefix_el = el.querySelector('.prefix')
-      if (prefix_el) prefix_el.onclick = mode !== 'search' ? () => toggle_subs(instance_path) : null
+      if (prefix_el) {
+        prefix_el.onclick = mode === 'search' 
+          ? () => toggle_search_subs(instance_path) 
+          : () => toggle_subs(instance_path)
+      }
     }
     el.querySelector('.name').onclick = ev => select_node(ev, instance_path)
     return el
@@ -1051,7 +1225,8 @@ function fallback_module () {
           'horizontal_scroll_value.json': { raw: '0' },
           'selected_instance_paths.json': { raw: '[]' },
           'confirmed_selected.json': { raw: '[]' },
-          'instance_states.json': { raw: '{}' }
+          'instance_states.json': { raw: '{}' },
+          'search_entry_states.json': { raw: '{}' }
         },
         'mode/': {
           'current_mode.json': { raw: '"menubar"' },
