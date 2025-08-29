@@ -100,3 +100,16 @@
 .node.type-css-file > .icon::before { content: '🎨'; }
 .node.type-json-file > .icon::before { content: '📝'; }
 .node.type-file > .icon::before { content: '📄'; }
+.navigate-to-hub {
+  margin-left: calc(5px * var(--scale-factor, 1));
+  padding: calc(2px * var(--scale-factor, 1)) calc(4px * var(--scale-factor, 1));
+  background-color: #61afef;
+  color: #282c34;
+  border-radius: calc(3px * var(--scale-factor, 1));
+  font-size: calc(12px * var(--scale-factor, 1));
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+.navigate-to-hub:hover {
+  background-color: #528bcc;
+}
