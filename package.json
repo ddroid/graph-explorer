@@ -10,11 +10,28 @@
     "start": "budo web/boot.js:bundle.js --open --live",
     "build": "browserify web/boot.js -o bundle.js",
     "start:act": "budo web/boot.js:bundle.js  --dir ./ --live --open",
-    "build:act": "browserify web/boot.js > bundle.js"
+    "build:act": "browserify web/boot.js > bundle.js",
+    "lint": "standardx",
+    "lint:fix": "standardx --fix"
   },
   "devDependencies": {
     "browserify": "^17.0.1",
-    "budo": "^11.8.4"
+    "budo": "^11.8.4",
+    "standardx": "^7.0.0"
+  },
+  "eslintConfig": {
+    "rules": {
+      "camelcase": 0,
+      "indent": [
+        "error",
+        2
+      ]
+    },
+    "ignorePatterns": [
+      "lib/STATE.js",
+      "bundle.js",
+      "node_modules/"
+    ]
   },
   "repository": {
     "type": "git",

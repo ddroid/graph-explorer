@@ -10,8 +10,6 @@ const sheet = new CSSStyleSheet()
 config().then(() => boot({ sid: '' }))
 
 async function config () {
-  const path = path =>
-    new URL(`../src/node_modules/${path}`, `file://${__dirname}`).href.slice(8)
   const html = document.documentElement
   const meta = document.createElement('meta')
   const font =
@@ -50,10 +48,8 @@ async function boot (opts) {
   // ----------------------------------------
   // ELEMENTS
   // ----------------------------------------
-  {
-    // desktop
-    shadow.append(await app(subs[0]))
-  }
+  // desktop
+  shadow.append(await app(subs[0]))
   // ----------------------------------------
   // INIT
   // ----------------------------------------
