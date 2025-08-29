@@ -1,6 +1,7 @@
 
 .graph-container, .node {
   font-family: monospace;
+  font-size: calc(14px * var(--scale-factor, 1)); /* Variable from the `graph_explorer.js` */
 }
 .graph-container {
   color: #abb2bf;
@@ -51,17 +52,19 @@
 }
 .pipe {
   text-align: center;
+  font-size: calc(14px * var(--scale-factor, 1));
 }
 .pipe::before { content: '┃'; }
 .blank {
-  width: 8.5px;
+  width: calc(8.5px * var(--scale-factor, 1));
   text-align: center;
 }
 .clickable {
   cursor: pointer;
 }
 .prefix, .icon {
-  margin-right: 2px;
+  margin-right: calc(2px * var(--scale-factor, 1));
+  font-size: calc(14px * var(--scale-factor, 1));
 }
 .top-cross::before { content: '┏╋'; }
 .top-tee-down::before { content: '┏┳'; }
@@ -81,8 +84,15 @@
 .middle-light-line::before { content: '┠─'; }
 .tee-down::before { content: '┳'; }
 .line-h::before { content: '━'; }
-.icon { display: inline-block; text-align: center; }
-.name { flex-grow: 1; }
+.icon { 
+  display: inline-block; 
+  text-align: center;
+  font-size: calc(16px * var(--scale-factor, 1));
+}
+.name { 
+  flex-grow: 1;
+  font-size: calc(14px * var(--scale-factor, 1));
+}
 .node.type-root > .icon::before { content: '🌐'; }
 .node.type-folder > .icon::before { content: '📁'; }
 .node.type-html-file > .icon::before { content: '📄'; }
