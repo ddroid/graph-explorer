@@ -34,18 +34,23 @@ async function graph_explorer (opts) {
   let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
   let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
   let multi_select_enabled = false // Flag to enable multi-select mode without ctrl key
+  let select_between_enabled = false // Flag to enable select between mode
+  let select_between_first_node = null // First node selected in select between mode
   let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
   let spacer_element = null // DOM element used to manage scroll position when hubs are toggled.
   let spacer_initial_height = 0
   let hub_num = 0 // Counter for expanded hubs.
+  let last_clicked_node = null // Track the last clicked node instance path for highlighting.
 
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
   const shadow = el.attachShadow({ mode: 'closed' })
   shadow.innerHTML = `
     <div class="graph-container"></div>
+    <div class="searchbar"></div>
     <div class="menubar"></div>
   `
+  const searchbar = shadow.querySelector('.searchbar')
   const menubar = shadow.querySelector('.menubar')
   const container = shadow.querySelector('.graph-container')
 
@@ -59,7 +64,6 @@ async function graph_explorer (opts) {
   const chunk_size = 50
   const max_rendered_nodes = chunk_size * 3
   let node_height
-  let scale_factor = 1 // Scale factor for mobile devices
 
   const top_sentinel = document.createElement('div')
   const bottom_sentinel = document.createElement('div')
@@ -70,8 +74,6 @@ async function graph_explorer (opts) {
     threshold: 0
   })
 
-  calculate_mobile_scale()
-  window.onresize = calculate_mobile_scale
   // Define handlers for different data types from the drive, called by `onbatch`.
   const on = {
     entries: on_entries,
@@ -156,7 +158,8 @@ async function graph_explorer (opts) {
       'selected_instance_paths.json': handle_selected_paths,
       'confirmed_selected.json': handle_confirmed_paths,
       'instance_states.json': handle_instance_states,
-      'search_entry_states.json': handle_search_entry_states
+      'search_entry_states.json': handle_search_entry_states,
+      'last_clicked_node.json': handle_last_clicked_node
     }
     let needs_render = false
     const render_nodes_needed = new Set()
@@ -227,6 +230,13 @@ async function graph_explorer (opts) {
         console.warn('search_entry_states is not a valid object, ignoring.', value)
       }
     }
+
+    function handle_last_clicked_node ({ value, render_nodes_needed }) {
+      const old_last_clicked = last_clicked_node
+      last_clicked_node = typeof value === 'string' ? value : null
+      if (old_last_clicked) render_nodes_needed.add(old_last_clicked)
+      if (last_clicked_node) render_nodes_needed.add(last_clicked_node)
+    }
   }
 
   function on_mode ({ data, paths }) {
@@ -234,9 +244,10 @@ async function graph_explorer (opts) {
       'current_mode.json': handle_current_mode,
       'previous_mode.json': handle_previous_mode,
       'search_query.json': handle_search_query,
-      'multi_select_enabled.json': handle_multi_select_enabled
+      'multi_select_enabled.json': handle_multi_select_enabled,
+      'select_between_enabled.json': handle_select_between_enabled
     }
-    let new_current_mode, new_previous_mode, new_search_query, new_multi_select_enabled
+    let new_current_mode, new_previous_mode, new_search_query, new_multi_select_enabled, new_select_between_enabled
 
     paths.forEach((path, i) => {
       const value = parse_json_data(data[i], path)
@@ -250,6 +261,7 @@ async function graph_explorer (opts) {
         if (result?.previous_mode !== undefined) new_previous_mode = result.previous_mode
         if (result?.search_query !== undefined) new_search_query = result.search_query
         if (result?.multi_select_enabled !== undefined) new_multi_select_enabled = result.multi_select_enabled
+        if (result?.select_between_enabled !== undefined) new_select_between_enabled = result.select_between_enabled
       }
     })
 
@@ -258,6 +270,11 @@ async function graph_explorer (opts) {
     if (typeof new_multi_select_enabled === 'boolean') {
       multi_select_enabled = new_multi_select_enabled
       render_menubar() // Re-render menubar to update button text
+    }
+    if (typeof new_select_between_enabled === 'boolean') {
+      select_between_enabled = new_select_between_enabled
+      if (!select_between_enabled) select_between_first_node = null
+      render_menubar()
     }
 
     if (
@@ -276,6 +293,7 @@ async function graph_explorer (opts) {
     if (mode && new_current_mode === 'search') update_drive_state({ dataset: 'mode', name: 'previous_mode', value: mode })
     mode = new_current_mode
     render_menubar()
+    render_searchbar()
     handle_mode_change()
     if (mode === 'search' && search_query) perform_search(search_query)
 
@@ -293,6 +311,10 @@ async function graph_explorer (opts) {
 
     function handle_multi_select_enabled ({ value }) {
       return { multi_select_enabled: value }
+    }
+
+    function handle_select_between_enabled ({ value }) {
+      return { select_between_enabled: value }
     }
   }
 
@@ -540,23 +562,6 @@ async function graph_explorer (opts) {
     return current_view
   }
 
-  function calculate_mobile_scale () {
-    const screen_width = window.innerWidth
-    const screen_height = window.innerHeight
-    const is_mobile = screen_width < 768 || screen_height < 600
-
-    if (is_mobile) {
-      // Scale proportionally based on screen size
-      const width_scale = Math.max(1.3, Math.min(2, 768 / screen_width))
-      const height_scale = Math.max(1.3, Math.min(2, 600 / screen_height))
-      scale_factor = Math.max(width_scale, height_scale)
-    } else {
-      scale_factor = 1
-    }
-
-    // Initialize the CSS variable
-    shadow.host.style.setProperty('--scale-factor', scale_factor)
-  }
   /******************************************************************************
  4. NODE CREATION AND EVENT HANDLING
    - `create_node` generates the DOM element for a single node.
@@ -611,12 +616,15 @@ async function graph_explorer (opts) {
 
     if (selected_instance_paths.includes(instance_path)) el.classList.add('selected')
     if (confirmed_instance_paths.includes(instance_path)) el.classList.add('confirmed')
+    if (last_clicked_node === instance_path) el.classList.add('last-clicked')
 
     const has_hubs = Array.isArray(entry.hubs) && entry.hubs.length > 0
     const has_subs = Array.isArray(entry.subs) && entry.subs.length > 0
 
-    if (depth) el.style.paddingLeft = `${17.5 * scale_factor}px`
-    el.style.height = `${node_height * scale_factor}px`
+    if (depth) {
+      el.classList.add('left-indent')
+      el.style.paddingLeft *= depth
+    }
 
     if (base_path === '/' && instance_path === '|/') return create_root_node({ state, has_subs, instance_path })
 
@@ -629,24 +637,17 @@ async function graph_explorer (opts) {
       ? get_highlighted_name(entry_name, query)
       : entry_name
 
-    // Check if hub is alrady expanded elsewhere
-    const existing_expanded_instance = has_hubs && !state.expanded_hubs ? find_expanded_hub_instance(base_path, instance_path) : null
-    // Don't show `jump` button if entry is a expnded hub
-    const is_this_an_expanded_hub = is_hub && view.some(node => {
-      const node_state = instance_states[node.instance_path]
-      if (!node_state || !node_state.expanded_hubs) return false
-      const node_entry = all_entries[node.base_path]
-      return node_entry && Array.isArray(node_entry.hubs) && node_entry.hubs.includes(base_path)
-    })
-    const is_duplicate_hub = existing_expanded_instance !== null && is_this_an_expanded_hub
-    const navigate_button_html = is_duplicate_hub ? '<span class="navigate-to-hub clickable">^</span>' : ''
+    // Check if this entry appears elsewhere in the view (any duplicate)
+    collect_all_duplicate_entries()
+    const has_duplicate_entries = has_duplicates(base_path)
+    const navigate_button_html = has_duplicate_entries ? '<span class="navigate-to-hub clickable">^</span>' : ''
 
     el.innerHTML = `
       <span class="indent">${pipe_html}</span>
       <span class="${prefix_class} ${prefix_class_name}"></span>
       <span class="${icon_class}"></span>
-      <span class="name clickable">${name_html}</span>
       ${navigate_button_html}
+      <span class="name clickable">${name_html}</span>
     `
 
     const icon_el = el.querySelector('.icon')
@@ -657,13 +658,21 @@ async function graph_explorer (opts) {
     }
 
     const navigate_el = el.querySelector('.navigate-to-hub')
-    if (navigate_el) navigate_el.onclick = () => scroll_to_and_highlight_hub(base_path)
+    if (navigate_el) {
+      navigate_el.onclick = () => cycle_to_next_duplicate(base_path, instance_path)
+    }
 
-    const prefix_el = el.querySelector('.prefix')
-    if (prefix_el && has_subs) {
-      prefix_el.onclick = mode === 'search'
+    // Add click event to the whole first part (indent + prefix) for expanding/collapsing subs
+    if (has_subs) {
+      const indent_el = el.querySelector('.indent')
+      const prefix_el = el.querySelector('.prefix')
+
+      const toggle_subs_handler = mode === 'search'
         ? () => toggle_search_subs(instance_path)
         : () => toggle_subs(instance_path)
+
+      if (indent_el) indent_el.onclick = toggle_subs_handler
+      if (prefix_el) prefix_el.onclick = toggle_subs_handler
     }
 
     el.querySelector('.name').onclick = ev => mode === 'search' ? search_expand_into_default(instance_path) : select_node(ev, instance_path)
@@ -753,8 +762,21 @@ async function graph_explorer (opts) {
     multi_select_button.innerHTML = `Multi Select: ${multi_select_enabled ? 'true' : 'false'}`
     multi_select_button.onclick = mode === 'search' ? null : toggle_multi_select
 
-    if (mode !== 'search') return menubar.replaceChildren(search_button, multi_select_button)
+    const select_between_button = document.createElement('button')
+    select_between_button.innerHTML = `Select Between: ${select_between_enabled ? 'true' : 'false'}`
+    select_between_button.onclick = mode === 'search' ? null : toggle_select_between
 
+    menubar.replaceChildren(search_button, multi_select_button, select_between_button)
+  }
+
+  function render_searchbar () {
+    if (mode !== 'search') {
+      searchbar.style.display = 'none'
+      searchbar.replaceChildren()
+      return
+    }
+
+    searchbar.style.display = 'flex'
     const search_input = Object.assign(document.createElement('input'), {
       type: 'text',
       placeholder: 'Search entries...',
@@ -763,12 +785,13 @@ async function graph_explorer (opts) {
       oninput: on_search_input
     })
 
-    menubar.replaceChildren(search_button, multi_select_button, search_input)
+    searchbar.replaceChildren(search_input)
     requestAnimationFrame(() => search_input.focus())
   }
 
   function handle_mode_change () {
     menubar.style.display = mode === 'default' ? 'none' : 'flex'
+    render_searchbar()
     build_and_render_view()
   }
 
@@ -784,7 +807,25 @@ async function graph_explorer (opts) {
 
   function toggle_multi_select () {
     multi_select_enabled = !multi_select_enabled
+    // Disable select between when enabling multi select
+    if (multi_select_enabled && select_between_enabled) {
+      select_between_enabled = false
+      select_between_first_node = null
+      update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: false })
+    }
     update_drive_state({ dataset: 'mode', name: 'multi_select_enabled', value: multi_select_enabled })
+    render_menubar() // Re-render to update button text
+  }
+
+  function toggle_select_between () {
+    select_between_enabled = !select_between_enabled
+    select_between_first_node = null // Reset first node selection
+    // Disable multi select when enabling select between
+    if (select_between_enabled && multi_select_enabled) {
+      multi_select_enabled = false
+      update_drive_state({ dataset: 'mode', name: 'multi_select_enabled', value: false })
+    }
+    update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: select_between_enabled })
     render_menubar() // Re-render to update button text
   }
 
@@ -973,12 +1014,54 @@ async function graph_explorer (opts) {
         toggling, and resetting the graph.
   ******************************************************************************/
   function select_node (ev, instance_path) {
+    last_clicked_node = instance_path
+    update_drive_state({ dataset: 'runtime', name: 'last_clicked_node', value: instance_path })
+
+    // Handle shift+click to enable select between mode temporarily
+    if (ev.shiftKey && !select_between_enabled) {
+      select_between_enabled = true
+      select_between_first_node = null
+      update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: true })
+      render_menubar()
+    }
+
     const new_selected = new Set(selected_instance_paths)
-    if (ev.ctrlKey || multi_select_enabled) {
+
+    if (select_between_enabled) {
+      handle_select_between(instance_path, new_selected)
+    } else if (ev.ctrlKey || multi_select_enabled) {
       new_selected.has(instance_path) ? new_selected.delete(instance_path) : new_selected.add(instance_path)
       update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [...new_selected] })
     } else {
       update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [instance_path] })
+    }
+  }
+
+  function handle_select_between (instance_path, new_selected) {
+    if (!select_between_first_node) {
+      select_between_first_node = instance_path
+    } else {
+      const first_index = view.findIndex(n => n.instance_path === select_between_first_node)
+      const second_index = view.findIndex(n => n.instance_path === instance_path)
+
+      if (first_index !== -1 && second_index !== -1) {
+        const start_index = Math.min(first_index, second_index)
+        const end_index = Math.max(first_index, second_index)
+
+        // Toggle selection for all nodes in the range
+        for (let i = start_index; i <= end_index; i++) {
+          const node_instance_path = view[i].instance_path
+          new_selected.has(node_instance_path) ? new_selected.delete(node_instance_path) : new_selected.add(node_instance_path)
+        }
+
+        update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [...new_selected] })
+      }
+
+      // Reset select between mode after second click
+      select_between_enabled = false
+      select_between_first_node = null
+      update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: false })
+      render_menubar()
     }
   }
 
@@ -1189,49 +1272,63 @@ async function graph_explorer (opts) {
   /******************************************************************************
   8. HUB DUPLICATION PREVENTION
   ******************************************************************************/
-  function find_expanded_hub_instance (target_base_path, exclude_instance_path) {
-    // Look through all nodes in the current view to find expanded hubs
+
+  function collect_all_duplicate_entries () {
+    duplicate_entries_map = {}
+    const base_path_counts = {}
     for (const node of view) {
-      if (node.instance_path === exclude_instance_path) continue
-
-      const state = instance_states[node.instance_path]
-      if (!state || !state.expanded_hubs) continue
-
-      const entry = all_entries[node.base_path]
-      if (!entry || !Array.isArray(entry.hubs)) continue
-
-      if (entry.hubs.includes(target_base_path)) return node.instance_path
+      if (!base_path_counts[node.base_path]) {
+        base_path_counts[node.base_path] = []
+      }
+      base_path_counts[node.base_path].push(node.instance_path)
     }
-    return null
+
+    // Store only duplicates
+    for (const [base_path, instance_paths] of Object.entries(base_path_counts)) {
+      if (instance_paths.length > 1) {
+        duplicate_entries_map[base_path] = instance_paths
+      }
+    }
   }
 
-  function scroll_to_and_highlight_hub (target_base_path) {
-    // Find the hub entry with the same base_path in the current view
-    const hub_index = view.findIndex(n => n.base_path === target_base_path)
-    if (hub_index === -1) return
+  function get_next_duplicate_instance (base_path, current_instance_path) {
+    const duplicates = duplicate_entries_map[base_path]
+    if (!duplicates || duplicates.length <= 1) return null
+
+    const current_index = duplicates.indexOf(current_instance_path)
+    if (current_index === -1) return duplicates[0]
+
+    const next_index = (current_index + 1) % duplicates.length
+    return duplicates[next_index]
+  }
+
+  function has_duplicates (base_path) {
+    return duplicate_entries_map[base_path] && duplicate_entries_map[base_path].length > 1
+  }
+
+  function cycle_to_next_duplicate (base_path, current_instance_path) {
+    const next_instance_path = get_next_duplicate_instance(base_path, current_instance_path)
+    if (next_instance_path) {
+      scroll_to_and_highlight_instance(next_instance_path)
+    }
+  }
+
+  function scroll_to_and_highlight_instance (target_instance_path) {
+    const target_index = view.findIndex(n => n.instance_path === target_instance_path)
+    if (target_index === -1) return
 
     // Calculate scroll position
-    const target_scroll_top = hub_index * node_height
+    const target_scroll_top = target_index * node_height
     container.scrollTop = target_scroll_top
 
     // Find and highlight the DOM element
-    const hub_instance_path = view[hub_index].instance_path
-    const hub_element = shadow.querySelector(`[data-instance_path="${CSS.escape(hub_instance_path)}"]`)
-    if (hub_element) {
-      hub_element.style.backgroundColor = 'pink'
-      hub_element.style.transition = 'background-color 0.3s ease'
-      // remove highlight after 2 seconds
+    const target_element = shadow.querySelector(`[data-instance_path="${CSS.escape(target_instance_path)}"]`)
+    if (target_element) {
+      target_element.classList.add('highlight-instance')
       setTimeout(() => {
-        hub_element.style.backgroundColor = ''
-        setTimeout(() => {
-          hub_element.style.transition = ''
-        }, 300)
+        target_element.classList.remove('highlight-instance')
       }, 2000)
     }
-  }
-
-  function is_hub_already_expanded (base_path, exclude_instance_path) {
-    return find_expanded_hub_instance(base_path, exclude_instance_path) !== null
   }
 
   /******************************************************************************
@@ -1243,9 +1340,9 @@ async function graph_explorer (opts) {
   // `(...)` creates a capturing group for the escaped query.
   // 'gi' flags: 'g' for global (all occurrences), 'i' for case-insensitive.
     const regex = new RegExp(`(${escape_regex(query)})`, 'gi')
-    // Replaces all matches of the regex in 'name' with the matched text wrapped in <b> tags.
+    // Replaces all matches of the regex in 'name' with the matched text wrapped in search-match class.
     // '$1' refers to the content of the first capturing group (the matched query).
-    return name.replace(regex, '<b>$1</b>')
+    return name.replace(regex, '<span class="search-match">$1</span>')
   }
 
   function escape_regex (string) {
@@ -1420,13 +1517,15 @@ function fallback_module () {
           'selected_instance_paths.json': { raw: '[]' },
           'confirmed_selected.json': { raw: '[]' },
           'instance_states.json': { raw: '{}' },
-          'search_entry_states.json': { raw: '{}' }
+          'search_entry_states.json': { raw: '{}' },
+          'last_clicked_node.json': { raw: 'null' }
         },
         'mode/': {
           'current_mode.json': { raw: '"menubar"' },
           'previous_mode.json': { raw: '"menubar"' },
           'search_query.json': { raw: '""' },
-          'multi_select_enabled.json': { raw: 'false' }
+          'multi_select_enabled.json': { raw: 'false' },
+          'select_between_enabled.json': { raw: 'false' }
         }
       }
     }
