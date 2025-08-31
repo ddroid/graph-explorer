@@ -1,7 +1,11 @@
+/* Container setup for responsive scaling */
+.graph-explorer-wrapper {
+  container-type: inline-size;
+  container-name: graph-explorer;
+}
 
 .graph-container, .node {
   font-family: monospace;
-  font-size: calc(14px * var(--scale-factor, 1)); /* Variable from the `graph_explorer.js` */
 }
 .graph-container {
   color: #abb2bf;
@@ -31,12 +35,6 @@
 .node.direct-match {
   background-color: #0030669c;
 }
-.searchbar {
-  display: none;
-  padding: 5px;
-  background-color: #21252b;
-  border-bottom: 1px solid #181a1f;
-}
 .menubar {
   display: flex;
   padding: 5px;
@@ -44,12 +42,10 @@
   border-bottom: 1px solid #181a1f;
 }
 .search-input {
-  width: 100%;
+  margin-left: auto;
   background-color: #282c34;
   color: #abb2bf;
   border: 1px solid #181a1f;
-  padding: 5px;
-  border-radius: 3px;
 }
 .confirm-wrapper {
   margin-left: auto;
@@ -60,19 +56,17 @@
 }
 .pipe {
   text-align: center;
-  font-size: calc(14px * var(--scale-factor, 1));
 }
 .pipe::before { content: '┃'; }
 .blank {
-  width: calc(8.5px * var(--scale-factor, 1));
+  width: 8.5px;
   text-align: center;
 }
 .clickable {
   cursor: pointer;
 }
 .prefix, .icon {
-  margin-right: calc(2px * var(--scale-factor, 1));
-  font-size: calc(14px * var(--scale-factor, 1));
+  margin-right: 2px;
 }
 .top-cross::before { content: '┏╋'; }
 .top-tee-down::before { content: '┏┳'; }
@@ -92,30 +86,22 @@
 .middle-light-line::before { content: '┠─'; }
 .tee-down::before { content: '┳'; }
 .line-h::before { content: '━'; }
-.icon { 
-  display: inline-block; 
-  text-align: center;
-  font-size: calc(16px * var(--scale-factor, 1));
-}
-.name { 
-  flex-grow: 1;
-  font-size: calc(14px * var(--scale-factor, 1));
-}
+.icon { display: inline-block; text-align: center; }
+.name { flex-grow: 1; }
 .node.type-root > .icon::before { content: '🌐'; }
 .node.type-folder > .icon::before { content: '📁'; }
 .node.type-html-file > .icon::before { content: '📄'; }
 .node.type-js-file > .icon::before { content: '📜'; }
 .node.type-css-file > .icon::before { content: '🎨'; }
 .node.type-json-file > .icon::before { content: '📝'; }
-.node.type-file > .icon::before { content: '📄'; }
-.navigate-to-hub {
-  margin-left: calc(5px * var(--scale-factor, 1));
-  margin-right: calc(5px * var(--scale-factor, 1));
-  padding: calc(2px * var(--scale-factor, 1)) calc(4px * var(--scale-factor, 1));
+.node.type-file > .icon::before { content: '📄'; }.navigate-to-hub {
+  margin-left: 5px;
+  margin-right: 5px;
+  padding: 2px 4px;
   background-color: #61afef;
   color: #282c34;
-  border-radius: calc(3px * var(--scale-factor, 1));
-  font-size: calc(12px * var(--scale-factor, 1));
+  border-radius: 3px;
+  font-size: 12px;
   font-weight: bold;
   transition: background-color 0.2s ease;
 }
@@ -129,4 +115,166 @@
 .highlight-instance {
   background-color: pink;
   transition: background-color 0.3s ease;
+}
+
+/* Base sizes for desktop (768px and above) */
+.left-indent {
+  padding-left: 17.5px !important;
+}
+.node {
+  font-size: 14px;
+  height: 16px;
+  padding-left: 0;
+}
+
+.pipe, .blank {
+  width: 8.5px;
+  font-size: 14px;
+}
+
+.prefix, .icon {
+  font-size: 14px;
+}
+
+.navigate-to-hub {
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.graph-container {
+  padding: 10px;
+}
+
+/* Medium screens (480px to 767px) - 1.3x scale */
+@media (max-width: 767px) {
+  .left-indent {
+    padding-left: 22.75px !important;
+  }
+  .node {
+    font-size: 18px !important;
+    height: 21px !important;
+  }
+  
+  .pipe, .blank {
+    width: 11px !important;
+    font-size: 18px !important;
+  }
+  
+  .prefix, .icon {
+    font-size: 18px !important;
+    margin-right: 3px !important;
+  }
+  
+  .navigate-to-hub {
+    font-size: 16px !important;
+    padding: 3px 5px !important;
+    margin-left: 7px !important;
+    margin-right: 7px !important;
+  }
+  
+  .graph-container {
+    padding: 13px !important;
+  }
+  
+  .confirm-wrapper {
+    padding-left: 13px !important;
+  }
+}
+
+/* Small screens (320px to 479px) - 1.6x scale */
+@media (max-width: 479px) {
+  .left-indent {
+    padding-left: 28px !important;
+  }
+  .node {
+    font-size: 22px !important;
+    height: 26px !important;
+  }
+  
+  .pipe, .blank {
+    width: 14px !important;
+    font-size: 22px !important;
+  }
+  
+  .prefix, .icon {
+    font-size: 22px !important;
+    margin-right: 4px !important;
+  }
+  
+  .navigate-to-hub {
+    font-size: 19px !important;
+    padding: 4px 6px !important;
+    margin-left: 8px !important;
+    margin-right: 8px !important;
+  }
+  
+  .graph-container {
+    padding: 16px !important;
+  }
+  
+  .confirm-wrapper {
+    padding-left: 16px !important;
+  }
+}
+
+/* Extra small screens (below 320px) - 2x scale */
+@media (max-width: 319px) {
+  .left-indent {
+    padding-left: 35px !important;
+  }
+  .node {
+    font-size: 28px !important;
+    height: 32px !important;
+  }
+  
+  .pipe, .blank {
+    width: 17px !important;
+    font-size: 28px !important;
+  }
+  
+  .prefix, .icon {
+    font-size: 28px !important;
+    margin-right: 4px !important;
+  }
+  
+  .navigate-to-hub {
+    font-size: 24px !important;
+    padding: 4px 8px !important;
+    margin-left: 10px !important;
+    margin-right: 10px !important;
+  }
+  
+  .graph-container {
+    padding: 20px !important;
+  }
+  
+  .confirm-wrapper {
+    padding-left: 20px !important;
+  }
+}
+
+/* Height-based responsive adjustments for mobile experience */
+@media (max-height: 600px) {
+  .left-indent {
+    padding-left: 22.75px !important;
+  }
+  .node {
+    font-size: 20px !important;
+    height: 24px !important;
+  }
+  
+  .pipe, .blank {
+    width: 12px !important;
+    font-size: 20px !important;
+  }
+  
+  .prefix, .icon {
+    font-size: 20px !important;
+    margin-right: 3px !important;
+  }
+  
+  .navigate-to-hub {
+    font-size: 18px !important;
+    padding: 3px 6px !important;
+  }
 }
