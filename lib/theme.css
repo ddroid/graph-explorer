@@ -31,6 +31,12 @@
 .node.direct-match {
   background-color: #0030669c;
 }
+.searchbar {
+  display: none;
+  padding: 5px;
+  background-color: #21252b;
+  border-bottom: 1px solid #181a1f;
+}
 .menubar {
   display: flex;
   padding: 5px;
@@ -38,10 +44,12 @@
   border-bottom: 1px solid #181a1f;
 }
 .search-input {
-  margin-left: auto;
+  width: 100%;
   background-color: #282c34;
   color: #abb2bf;
   border: 1px solid #181a1f;
+  padding: 5px;
+  border-radius: 3px;
 }
 .confirm-wrapper {
   margin-left: auto;
