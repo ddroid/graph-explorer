@@ -110,6 +110,7 @@
 .node.type-file > .icon::before { content: '📄'; }
 .navigate-to-hub {
   margin-left: calc(5px * var(--scale-factor, 1));
+  margin-right: calc(5px * var(--scale-factor, 1));
   padding: calc(2px * var(--scale-factor, 1)) calc(4px * var(--scale-factor, 1));
   background-color: #61afef;
   color: #282c34;
