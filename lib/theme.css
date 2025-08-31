@@ -113,3 +113,7 @@
 .navigate-to-hub:hover {
   background-color: #528bcc;
 }
+.search-match {
+  font-weight: bold;
+  color: #e5c07b;
+}
