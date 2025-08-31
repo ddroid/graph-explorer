@@ -126,3 +126,7 @@
   font-weight: bold;
   color: #e5c07b;
 }
+.highlight-instance {
+  background-color: pink;
+  transition: background-color 0.3s ease;
+}
