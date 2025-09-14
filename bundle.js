@@ -30,12 +30,14 @@ async function graph_explorer (opts) {
   let mode // Current mode of the graph explorer, can be set to 'default', 'menubar' or 'search'. Its value should be set by the `mode` file in the drive.
   let previous_mode
   let search_query = ''
+  let hubs_flag = 'default' // Flag for hubs behavior: 'default' (prevent duplication), 'true' (no duplication prevention), 'false' (disable hubs)
   let drive_updated_by_scroll = false // Flag to prevent `onbatch` from re-rendering on scroll updates.
   let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
   let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
   let multi_select_enabled = false // Flag to enable multi-select mode without ctrl key
   let select_between_enabled = false // Flag to enable select between mode
   let select_between_first_node = null // First node selected in select between mode
+  let duplicate_entries_map = {}
   let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
   let spacer_element = null // DOM element used to manage scroll position when hubs are toggled.
   let spacer_initial_height = 0
@@ -79,7 +81,8 @@ async function graph_explorer (opts) {
     entries: on_entries,
     style: inject_style,
     runtime: on_runtime,
-    mode: on_mode
+    mode: on_mode,
+    flags: on_flags
   }
   // Start watching for state changes. This is the main trigger for all updates.
   await sdb.watch(onbatch)
@@ -290,7 +293,7 @@ async function graph_explorer (opts) {
     }
     if (!new_current_mode || mode === new_current_mode) return
 
-    if (mode && new_current_mode === 'search') update_drive_state({ dataset: 'mode', name: 'previous_mode', value: mode })
+    if (mode && new_current_mode === 'search') update_drive_state({ type: 'mode/previous_mode', message: mode })
     mode = new_current_mode
     render_menubar()
     render_searchbar()
@@ -318,6 +321,33 @@ async function graph_explorer (opts) {
     }
   }
 
+  function on_flags ({ data, paths }) {
+    const on_flags_paths = {
+      'hubs.json': handle_hubs_flag
+    }
+
+    paths.forEach((path, i) => {
+      const value = parse_json_data(data[i], path)
+      if (value === null) return
+
+      const filename = path.split('/').pop()
+      const handler = on_flags_paths[filename]
+      if (handler) {
+        const result = handler(value)
+        if (result && result.needs_render) build_and_render_view()
+      }
+    })
+
+    function handle_hubs_flag (value) {
+      if (typeof value === 'string' && ['default', 'true', 'false'].includes(value)) {
+        hubs_flag = value
+        return { needs_render: true }
+      } else {
+        console.warn('hubs flag must be one of: "default", "true", "false", ignoring.', value)
+      }
+    }
+  }
+
   function inject_style ({ data }) {
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(data[0])
@@ -325,10 +355,11 @@ async function graph_explorer (opts) {
   }
 
   // Helper to persist component state to the drive.
-  async function update_drive_state ({ dataset, name, value }) {
+  async function update_drive_state ({ type, message }) {
     try {
-      await drive.put(`${dataset}/${name}.json`, JSON.stringify(value))
+      await drive.put(`${type}.json`, JSON.stringify(message))
     } catch (e) {
+      const [dataset, name] = type.split('/')
       console.error(`Failed to update ${dataset} state for ${name}:`, e)
     }
   }
@@ -618,7 +649,7 @@ async function graph_explorer (opts) {
     if (confirmed_instance_paths.includes(instance_path)) el.classList.add('confirmed')
     if (last_clicked_node === instance_path) el.classList.add('last-clicked')
 
-    const has_hubs = Array.isArray(entry.hubs) && entry.hubs.length > 0
+    const has_hubs = hubs_flag === 'false' ? false : Array.isArray(entry.hubs) && entry.hubs.length > 0
     const has_subs = Array.isArray(entry.subs) && entry.subs.length > 0
 
     if (depth) {
@@ -638,44 +669,50 @@ async function graph_explorer (opts) {
       : entry_name
 
     // Check if this entry appears elsewhere in the view (any duplicate)
-    collect_all_duplicate_entries()
-    const has_duplicate_entries = has_duplicates(base_path)
-    const navigate_button_html = has_duplicate_entries ? '<span class="navigate-to-hub clickable">^</span>' : ''
+    let has_duplicate_entries = false
+    if (mode !== 'search' && hubs_flag !== 'true') { // disabled in search mode and when hubs_flag is 'true'
+      collect_all_duplicate_entries()
+      has_duplicate_entries = has_duplicates(base_path)
+
+      // coloring class for duplicates
+      if (has_duplicate_entries) {
+        el.classList.add('matching-entry')
+      }
+    }
 
     el.innerHTML = `
       <span class="indent">${pipe_html}</span>
       <span class="${prefix_class} ${prefix_class_name}"></span>
       <span class="${icon_class}"></span>
-      ${navigate_button_html}
-      <span class="name clickable">${name_html}</span>
+      <span class="name ${has_duplicate_entries ? '' : 'clickable'}">${name_html}</span>
     `
 
-    const icon_el = el.querySelector('.icon')
-    if (icon_el && has_hubs && base_path !== '/') {
-      icon_el.onclick = mode === 'search'
-        ? () => toggle_search_hubs(instance_path)
-        : () => toggle_hubs(instance_path)
+    // For matching entries, disable normal event listener and add handler to whole entry to create button for jump to next duplicate
+    if (has_duplicate_entries && mode !== 'search' && hubs_flag !== 'true') {
+      el.onclick = () => add_jump_button_to_matching_entry(el, base_path, instance_path)
+    } else {
+      const icon_el = el.querySelector('.icon')
+      if (icon_el && has_hubs && base_path !== '/') {
+        icon_el.onclick = mode === 'search'
+          ? () => toggle_search_hubs(instance_path)
+          : () => toggle_hubs(instance_path)
+      }
+
+      // Add click event to the whole first part (indent + prefix) for expanding/collapsing subs
+      if (has_subs) {
+        const indent_el = el.querySelector('.indent')
+        const prefix_el = el.querySelector('.prefix')
+
+        const toggle_subs_handler = mode === 'search'
+          ? () => toggle_search_subs(instance_path)
+          : () => toggle_subs(instance_path)
+
+        if (indent_el) indent_el.onclick = toggle_subs_handler
+        if (prefix_el) prefix_el.onclick = toggle_subs_handler
+      }
+
+      el.querySelector('.name').onclick = ev => mode === 'search' ? search_expand_into_default(instance_path) : select_node(ev, instance_path)
     }
-
-    const navigate_el = el.querySelector('.navigate-to-hub')
-    if (navigate_el) {
-      navigate_el.onclick = () => cycle_to_next_duplicate(base_path, instance_path)
-    }
-
-    // Add click event to the whole first part (indent + prefix) for expanding/collapsing subs
-    if (has_subs) {
-      const indent_el = el.querySelector('.indent')
-      const prefix_el = el.querySelector('.prefix')
-
-      const toggle_subs_handler = mode === 'search'
-        ? () => toggle_search_subs(instance_path)
-        : () => toggle_subs(instance_path)
-
-      if (indent_el) indent_el.onclick = toggle_subs_handler
-      if (prefix_el) prefix_el.onclick = toggle_subs_handler
-    }
-
-    el.querySelector('.name').onclick = ev => mode === 'search' ? search_expand_into_default(instance_path) : select_node(ev, instance_path)
 
     if (selected_instance_paths.includes(instance_path) || confirmed_instance_paths.includes(instance_path)) el.appendChild(create_confirm_checkbox(instance_path))
 
@@ -776,14 +813,15 @@ async function graph_explorer (opts) {
       return
     }
 
-    searchbar.style.display = 'flex'
-    const search_input = Object.assign(document.createElement('input'), {
+    const search_opts = {
       type: 'text',
       placeholder: 'Search entries...',
       className: 'search-input',
       value: search_query,
       oninput: on_search_input
-    })
+    }
+    searchbar.style.display = 'flex'
+    const search_input = Object.assign(document.createElement('input'), search_opts)
 
     searchbar.replaceChildren(search_input)
     requestAnimationFrame(() => search_input.focus())
@@ -799,9 +837,9 @@ async function graph_explorer (opts) {
     if (mode === 'search') {
       search_query = ''
       drive_updated_by_search = true
-      update_drive_state({ dataset: 'mode', name: 'search_query', value: '' })
+      update_drive_state({ type: 'mode/search_query', message: '' })
     }
-    update_drive_state({ dataset: 'mode', name: 'current_mode', value: mode === 'search' ? previous_mode : 'search' })
+    update_drive_state({ type: 'mode/current_mode', message: mode === 'search' ? previous_mode : 'search' })
     search_state_instances = instance_states
   }
 
@@ -811,9 +849,9 @@ async function graph_explorer (opts) {
     if (multi_select_enabled && select_between_enabled) {
       select_between_enabled = false
       select_between_first_node = null
-      update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: false })
+      update_drive_state({ type: 'mode/select_between_enabled', message: false })
     }
-    update_drive_state({ dataset: 'mode', name: 'multi_select_enabled', value: multi_select_enabled })
+    update_drive_state({ type: 'mode/multi_select_enabled', message: multi_select_enabled })
     render_menubar() // Re-render to update button text
   }
 
@@ -823,16 +861,16 @@ async function graph_explorer (opts) {
     // Disable multi select when enabling select between
     if (select_between_enabled && multi_select_enabled) {
       multi_select_enabled = false
-      update_drive_state({ dataset: 'mode', name: 'multi_select_enabled', value: false })
+      update_drive_state({ type: 'mode/multi_select_enabled', message: false })
     }
-    update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: select_between_enabled })
+    update_drive_state({ type: 'mode/select_between_enabled', message: select_between_enabled })
     render_menubar() // Re-render to update button text
   }
 
   function on_search_input (event) {
     search_query = event.target.value.trim()
     drive_updated_by_search = true
-    update_drive_state({ dataset: 'mode', name: 'search_query', value: search_query })
+    update_drive_state({ type: 'mode/search_query', message: search_query })
     if (search_query === '') search_state_instances = instance_states
     perform_search(search_query)
   }
@@ -1015,13 +1053,13 @@ async function graph_explorer (opts) {
   ******************************************************************************/
   function select_node (ev, instance_path) {
     last_clicked_node = instance_path
-    update_drive_state({ dataset: 'runtime', name: 'last_clicked_node', value: instance_path })
+    update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
 
     // Handle shift+click to enable select between mode temporarily
     if (ev.shiftKey && !select_between_enabled) {
       select_between_enabled = true
       select_between_first_node = null
-      update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: true })
+      update_drive_state({ type: 'mode/select_between_enabled', message: true })
       render_menubar()
     }
 
@@ -1031,9 +1069,9 @@ async function graph_explorer (opts) {
       handle_select_between(instance_path, new_selected)
     } else if (ev.ctrlKey || multi_select_enabled) {
       new_selected.has(instance_path) ? new_selected.delete(instance_path) : new_selected.add(instance_path)
-      update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [...new_selected] })
+      update_drive_state({ type: 'runtime/selected_instance_paths', message: [...new_selected] })
     } else {
-      update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [instance_path] })
+      update_drive_state({ type: 'runtime/selected_instance_paths', message: [instance_path] })
     }
   }
 
@@ -1054,13 +1092,13 @@ async function graph_explorer (opts) {
           new_selected.has(node_instance_path) ? new_selected.delete(node_instance_path) : new_selected.add(node_instance_path)
         }
 
-        update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [...new_selected] })
+        update_drive_state({ type: 'runtime/selected_instance_paths', message: [...new_selected] })
       }
 
       // Reset select between mode after second click
       select_between_enabled = false
       select_between_first_node = null
-      update_drive_state({ dataset: 'mode', name: 'select_between_enabled', value: false })
+      update_drive_state({ type: 'mode/select_between_enabled', message: false })
       render_menubar()
     }
   }
@@ -1087,12 +1125,12 @@ async function graph_explorer (opts) {
     }
 
     // Persist selection and expansion state
-    update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [target_instance_path] })
+    update_drive_state({ type: 'runtime/selected_instance_paths', message: [target_instance_path] })
     drive_updated_by_toggle = true
-    update_drive_state({ dataset: 'runtime', name: 'instance_states', value: instance_states })
+    update_drive_state({ type: 'runtime/instance_states', message: instance_states })
     search_query = ''
-    update_drive_state({ dataset: 'mode', name: 'query', value: '' })
-    update_drive_state({ dataset: 'mode', name: 'current_mode', value: previous_mode })
+    update_drive_state({ type: 'mode/query', message: '' })
+    update_drive_state({ type: 'mode/current_mode', message: previous_mode })
   }
 
   function handle_confirm (ev, instance_path) {
@@ -1109,8 +1147,8 @@ async function graph_explorer (opts) {
       new_confirmed.delete(instance_path)
     }
 
-    update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [...new_selected] })
-    update_drive_state({ dataset: 'runtime', name: 'confirmed_selected', value: [...new_confirmed] })
+    update_drive_state({ type: 'runtime/selected_instance_paths', message: [...new_selected] })
+    update_drive_state({ type: 'runtime/confirmed_selected', message: [...new_confirmed] })
   }
 
   function toggle_subs (instance_path) {
@@ -1119,7 +1157,7 @@ async function graph_explorer (opts) {
     build_and_render_view(instance_path)
     // Set a flag to prevent the subsequent `onbatch` call from causing a render loop.
     drive_updated_by_toggle = true
-    update_drive_state({ dataset: 'runtime', name: 'instance_states', value: instance_states })
+    update_drive_state({ type: 'runtime/instance_states', message: instance_states })
   }
 
   function toggle_hubs (instance_path) {
@@ -1128,7 +1166,7 @@ async function graph_explorer (opts) {
     state.expanded_hubs = !state.expanded_hubs
     build_and_render_view(instance_path, true)
     drive_updated_by_toggle = true
-    update_drive_state({ dataset: 'runtime', name: 'instance_states', value: instance_states })
+    update_drive_state({ type: 'runtime/instance_states', message: instance_states })
   }
 
   function toggle_search_subs (instance_path) {
@@ -1136,7 +1174,7 @@ async function graph_explorer (opts) {
     state.expanded_subs = !state.expanded_subs
     perform_search(search_query) // Re-render search results with new state
     drive_updated_by_toggle = true
-    update_drive_state({ dataset: 'runtime', name: 'search_entry_states', value: search_entry_states })
+    update_drive_state({ type: 'runtime/search_entry_states', message: search_entry_states })
   }
 
   function toggle_search_hubs (instance_path) {
@@ -1144,7 +1182,7 @@ async function graph_explorer (opts) {
     state.expanded_hubs = !state.expanded_hubs
     perform_search(search_query) // Re-render search results with new state
     drive_updated_by_toggle = true
-    update_drive_state({ dataset: 'runtime', name: 'search_entry_states', value: search_entry_states })
+    update_drive_state({ type: 'runtime/search_entry_states', message: search_entry_states })
   }
 
   function reset () {
@@ -1152,7 +1190,7 @@ async function graph_explorer (opts) {
     if (mode === 'search') {
       search_entry_states = {}
       drive_updated_by_toggle = true
-      update_drive_state({ dataset: 'runtime', name: 'search_entry_states', value: search_entry_states })
+      update_drive_state({ type: 'runtime/search_entry_states', message: search_entry_states })
       perform_search(search_query)
       return
     }
@@ -1160,11 +1198,11 @@ async function graph_explorer (opts) {
     const new_instance_states = {
       [root_instance_path]: { expanded_subs: true, expanded_hubs: false }
     }
-    update_drive_state({ dataset: 'runtime', name: 'vertical_scroll_value', value: 0 })
-    update_drive_state({ dataset: 'runtime', name: 'horizontal_scroll_value', value: 0 })
-    update_drive_state({ dataset: 'runtime', name: 'selected_instance_paths', value: [] })
-    update_drive_state({ dataset: 'runtime', name: 'confirmed_selected', value: [] })
-    update_drive_state({ dataset: 'runtime', name: 'instance_states', value: new_instance_states })
+    update_drive_state({ type: 'runtime/vertical_scroll_value', message: 0 })
+    update_drive_state({ type: 'runtime/horizontal_scroll_value', message: 0 })
+    update_drive_state({ type: 'runtime/selected_instance_paths', message: [] })
+    update_drive_state({ type: 'runtime/confirmed_selected', message: [] })
+    update_drive_state({ type: 'runtime/instance_states', message: new_instance_states })
   }
 
   /******************************************************************************
@@ -1270,7 +1308,7 @@ async function graph_explorer (opts) {
   }
 
   /******************************************************************************
-  8. HUB DUPLICATION PREVENTION
+  8. ENTRY DUPLICATION PREVENTION
   ******************************************************************************/
 
   function collect_all_duplicate_entries () {
@@ -1313,6 +1351,34 @@ async function graph_explorer (opts) {
     }
   }
 
+  function add_jump_button_to_matching_entry (el, base_path, instance_path) {
+    // Check if jump button already exists
+    if (el.querySelector('.navigate-to-hub')) return
+
+    // Get current left padding value to match the width
+    const computedStyle = window.getComputedStyle(el)
+    const leftPadding = computedStyle.paddingLeft
+
+    // Create a div to replace the left padding
+    const indent_button_div = document.createElement('div')
+    indent_button_div.className = 'indent-btn-container'
+    indent_button_div.style.width = leftPadding
+
+    const navigate_button = document.createElement('span')
+    navigate_button.className = 'navigate-to-hub clickable'
+    navigate_button.textContent = '^'
+    navigate_button.onclick = (event) => {
+      event.stopPropagation() // Prevent triggering the whole entry click again
+      cycle_to_next_duplicate(base_path, instance_path)
+    }
+
+    indent_button_div.appendChild(navigate_button)
+
+    // Remove left padding
+    el.classList.remove('left-indent')
+    el.insertBefore(indent_button_div, el.firstChild)
+  }
+
   function scroll_to_and_highlight_instance (target_instance_path) {
     const target_index = view.findIndex(n => n.instance_path === target_instance_path)
     if (target_index === -1) return
@@ -1350,7 +1416,7 @@ async function graph_explorer (opts) {
   // It replaces characters like -, /, \, ^, $, *, +, ?, ., (, ), |, [, ], {, }
   // with their escaped versions (e.g., '.' becomes '\.').
   // This prevents them from being interpreted as regex metacharacters.
-    return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') // Corrected: should be \\$& to escape the found char
+    return string.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') // Corrected: should be \\$& to escape the found char
   }
 
   function check_and_reset_feedback_flags () {
@@ -1473,7 +1539,7 @@ async function graph_explorer (opts) {
   function update_scroll_state ({ current_value, new_value, name }) {
     if (current_value !== new_value) {
       drive_updated_by_scroll = true // Set flag to prevent render loop.
-      update_drive_state({ dataset: 'runtime', name, value: new_value })
+      update_drive_state({ type: `runtime/${name}`, message: new_value })
       return new_value
     }
     return current_value
@@ -1526,6 +1592,9 @@ function fallback_module () {
           'search_query.json': { raw: '""' },
           'multi_select_enabled.json': { raw: 'false' },
           'select_between_enabled.json': { raw: 'false' }
+        },
+        'flags/': {
+          'hubs.json': { raw: '"default"' }
         }
       }
     }
@@ -1560,6 +1629,10 @@ fetch(init_url, fetch_opts)
 (function (__filename){(function (){
 const STATE = require('../lib/STATE')
 const statedb = STATE(__filename)
+const admin_api = statedb.admin()
+admin_api.on(event => {
+  // console.log(event)
+})
 const { sdb } = statedb(fallback_module)
 
 /******************************************************************************
@@ -1634,16 +1707,21 @@ function fallback_module () {
         $: '',
         0: '',
         mapping: {
-          style: 'style',
+          style: 'theme',
           entries: 'entries',
           runtime: 'runtime',
-          mode: 'mode'
+          mode: 'mode',
+          flags: 'flags'
         }
       }
     },
     drive: {
       'theme/': { 'style.css': { raw: "body { font-family: 'system-ui'; }" } },
-      'lang/': {}
+      'lang/': {},
+      'entries/': {},
+      'runtime/': {},
+      'mode/': {},
+      'flags/': {}
     }
   }
 }
