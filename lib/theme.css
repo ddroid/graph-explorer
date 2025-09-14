@@ -58,6 +58,11 @@
 .indent {
   display: flex;
 }
+.indent-btn-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .pipe {
   text-align: center;
 }
@@ -98,7 +103,8 @@
 .node.type-js-file > .icon::before { content: '📜'; }
 .node.type-css-file > .icon::before { content: '🎨'; }
 .node.type-json-file > .icon::before { content: '📝'; }
-.node.type-file > .icon::before { content: '📄'; }.navigate-to-hub {
+.node.type-file > .icon::before { content: '📄'; }
+.navigate-to-hub {
   margin-left: 5px;
   margin-right: 5px;
   padding: 2px 4px;
