@@ -20,6 +20,10 @@
     "standardx": "^7.0.0"
   },
   "eslintConfig": {
+    "env": {
+      "browser": true,
+      "es2021": true
+    },
     "rules": {
       "camelcase": 0,
       "indent": [

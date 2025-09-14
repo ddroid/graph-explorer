@@ -1,5 +1,9 @@
 const STATE = require('../lib/STATE')
 const statedb = STATE(__filename)
+const admin_api = statedb.admin()
+admin_api.on(event => {
+  console.log(event)
+})
 const { sdb } = statedb(fallback_module)
 
 /******************************************************************************
@@ -74,7 +78,7 @@ function fallback_module () {
         $: '',
         0: '',
         mapping: {
-          style: 'style',
+          style: 'theme',
           entries: 'entries',
           runtime: 'runtime',
           mode: 'mode'
@@ -83,7 +87,10 @@ function fallback_module () {
     },
     drive: {
       'theme/': { 'style.css': { raw: "body { font-family: 'system-ui'; }" } },
-      'lang/': {}
+      'lang/': {},
+      'entries/': {},
+      'runtime/': {},
+      'mode/': {}
     }
   }
 }
