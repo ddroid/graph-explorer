@@ -46,10 +46,11 @@
   border-bottom: 1px solid #181a1f;
 }
 .search-input {
-  margin-left: auto;
   background-color: #282c34;
   color: #abb2bf;
   border: 1px solid #181a1f;
+  display: flex;
+  width: 100%;
 }
 .confirm-wrapper {
   margin-left: auto;
