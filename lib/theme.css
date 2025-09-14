@@ -120,6 +120,10 @@
   background-color: pink;
   transition: background-color 0.3s ease;
 }
+.matching-entry .name {
+  color: #e06c75 !important;
+  font-weight: bold;
+}
 
 /* Base sizes for desktop (768px and above) */
 .left-indent {

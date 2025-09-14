@@ -15,7 +15,7 @@
   "/pins": {
     "name": "pins",
     "type": "folder",
-    "subs": [],
+    "subs": ["/data/themes"],
     "hubs": [
       "/"
     ]
