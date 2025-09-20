@@ -117,16 +117,16 @@
   font-weight: bold;
   transition: background-color 0.2s ease;
 }
+.wand.navigate-to-hub {
+  margin-left: 1px;
+  margin-right: 1px;
+}
 .navigate-to-hub:hover {
   background-color: #528bcc;
 }
 .search-match {
   font-weight: bold;
   color: #e5c07b;
-}
-.highlight-instance {
-  background-color: pink;
-  transition: background-color 0.3s ease;
 }
 .matching-entry .name {
   color: #e06c75;
@@ -189,7 +189,10 @@
     margin-left: 7px;
     margin-right: 7px;
   }
-  
+  .wand.navigate-to-hub {
+    margin-left: 1.5px;
+    margin-right: 1.5px;
+  }
   .graph-container {
     padding: 13px;
   }
@@ -255,7 +258,10 @@
       margin-left: 8px;
       margin-right: 8px;
     }
-    
+    .wand.navigate-to-hub {
+      margin-left: 1.66px;
+      margin-right: 1.66px;
+    }
     .graph-container {
       padding: 16px;
     }
@@ -294,7 +300,10 @@
       margin-left: 10px;
       margin-right: 10px;
     }
-
+    .wand.navigate-to-hub {
+      margin-left: 2px;
+      margin-right: 2px;
+    }
     .graph-container {
       padding: 20px;
     }
