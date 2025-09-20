@@ -34,6 +34,7 @@ async function graph_explorer (opts) {
   let drive_updated_by_scroll = false // Flag to prevent `onbatch` from re-rendering on scroll updates.
   let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
   let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
+  let drive_updated_by_match = false // Flag to prevent `onbatch` from re-rendering on matching entry updates.
   let multi_select_enabled = false // Flag to enable multi-select mode without ctrl key
   let select_between_enabled = false // Flag to enable select between mode
   let select_between_first_node = null // First node selected in select between mode
@@ -43,6 +44,7 @@ async function graph_explorer (opts) {
   let spacer_initial_height = 0
   let hub_num = 0 // Counter for expanded hubs.
   let last_clicked_node = null // Track the last clicked node instance path for highlighting.
+  let root_wand_state = null // Store original root wand state when replaced with jump button
 
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
@@ -496,6 +498,7 @@ async function graph_explorer (opts) {
     observer.observe(bottom_sentinel)
 
     const set_scroll_and_sync = () => {
+      drive_updated_by_scroll = true
       container.scrollTop = new_scroll_top
       container.scrollLeft = old_scroll_left
       vertical_scroll_value = container.scrollTop
@@ -654,7 +657,6 @@ async function graph_explorer (opts) {
 
     if (depth) {
       el.classList.add('left-indent')
-      el.style.paddingLeft *= depth
     }
 
     if (base_path === '/' && instance_path === '|/') return create_root_node({ state, has_subs, instance_path })
@@ -670,13 +672,19 @@ async function graph_explorer (opts) {
 
     // Check if this entry appears elsewhere in the view (any duplicate)
     let has_duplicate_entries = false
+    let is_first_occurrence = false
     if (mode !== 'search' && hubs_flag !== 'true') { // disabled in search mode and when hubs_flag is 'true'
       collect_all_duplicate_entries()
       has_duplicate_entries = has_duplicates(base_path)
 
       // coloring class for duplicates
       if (has_duplicate_entries) {
-        el.classList.add('matching-entry')
+        is_first_occurrence = is_first_duplicate(base_path, instance_path)
+        if (is_first_occurrence) {
+          el.classList.add('first-matching-entry')
+        } else {
+          el.classList.add('matching-entry')
+        }
       }
     }
 
@@ -684,12 +692,22 @@ async function graph_explorer (opts) {
       <span class="indent">${pipe_html}</span>
       <span class="${prefix_class} ${prefix_class_name}"></span>
       <span class="${icon_class}"></span>
-      <span class="name ${has_duplicate_entries ? '' : 'clickable'}">${name_html}</span>
+      <span class="name ${has_duplicate_entries && !is_first_occurrence ? '' : 'clickable'}">${name_html}</span>
     `
 
     // For matching entries, disable normal event listener and add handler to whole entry to create button for jump to next duplicate
-    if (has_duplicate_entries && mode !== 'search' && hubs_flag !== 'true') {
-      el.onclick = () => add_jump_button_to_matching_entry(el, base_path, instance_path)
+    if (has_duplicate_entries && !is_first_occurrence && mode !== 'search' && hubs_flag !== 'true') {
+      el.onclick = () => {
+        // Manually update last clicked
+        last_clicked_node = instance_path
+        drive_updated_by_match = true
+
+        update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
+        // Manually update DOM
+        update_last_clicked_styling(instance_path)
+        add_jump_button_to_matching_entry(el, base_path, instance_path)
+      }
     } else {
       const icon_el = el.querySelector('.icon')
       if (icon_el && has_hubs && base_path !== '/') {
@@ -711,7 +729,19 @@ async function graph_explorer (opts) {
         if (prefix_el) prefix_el.onclick = toggle_subs_handler
       }
 
-      el.querySelector('.name').onclick = ev => mode === 'search' ? search_expand_into_default(instance_path) : select_node(ev, instance_path)
+      // Special handling for first duplicate entry - it should have normal select behavior but also show jump button
+      const name_el = el.querySelector('.name')
+      if (has_duplicate_entries && is_first_occurrence && mode !== 'search' && hubs_flag !== 'true') {
+        name_el.onclick = ev => {
+          select_node(ev, instance_path)
+          // Also add jump button functionality for first occurrence
+          setTimeout(() => {
+            add_jump_button_to_matching_entry(el, base_path, instance_path)
+          }, 10)
+        }
+      } else {
+        name_el.onclick = ev => mode === 'search' ? search_expand_into_default(instance_path) : select_node(ev, instance_path)
+      }
     }
 
     if (selected_instance_paths.includes(instance_path) || confirmed_instance_paths.includes(instance_path)) el.appendChild(create_confirm_checkbox(instance_path))
@@ -1139,6 +1169,9 @@ async function graph_explorer (opts) {
     const new_selected = new Set(selected_instance_paths)
     const new_confirmed = new Set(confirmed_instance_paths)
 
+    last_clicked_node = instance_path
+    update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
     if (is_checked) {
       new_selected.delete(instance_path)
       new_confirmed.add(instance_path)
@@ -1154,6 +1187,10 @@ async function graph_explorer (opts) {
   function toggle_subs (instance_path) {
     const state = get_or_create_state(instance_states, instance_path)
     state.expanded_subs = !state.expanded_subs
+
+    last_clicked_node = instance_path
+    update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
     build_and_render_view(instance_path)
     // Set a flag to prevent the subsequent `onbatch` call from causing a render loop.
     drive_updated_by_toggle = true
@@ -1164,6 +1201,11 @@ async function graph_explorer (opts) {
     const state = get_or_create_state(instance_states, instance_path)
     state.expanded_hubs ? hub_num-- : hub_num++
     state.expanded_hubs = !state.expanded_hubs
+
+    last_clicked_node = instance_path
+    drive_updated_by_scroll = true // Prevent onbatch interference with hub spacer
+    update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
     build_and_render_view(instance_path, true)
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
@@ -1172,21 +1214,30 @@ async function graph_explorer (opts) {
   function toggle_search_subs (instance_path) {
     const state = get_or_create_state(search_entry_states, instance_path)
     state.expanded_subs = !state.expanded_subs
-    perform_search(search_query) // Re-render search results with new state
-    drive_updated_by_toggle = true
+
+    last_clicked_node = instance_path
+    update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
+    perform_search(search_query)
+    drive_updated_by_search = true
     update_drive_state({ type: 'runtime/search_entry_states', message: search_entry_states })
   }
 
   function toggle_search_hubs (instance_path) {
     const state = get_or_create_state(search_entry_states, instance_path)
     state.expanded_hubs = !state.expanded_hubs
-    perform_search(search_query) // Re-render search results with new state
-    drive_updated_by_toggle = true
+
+    last_clicked_node = instance_path
+    update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
+    perform_search(search_query)
+    drive_updated_by_search = true
     update_drive_state({ type: 'runtime/search_entry_states', message: search_entry_states })
   }
 
   function reset () {
     // reset all of the manual expansions made
+    instance_states = {}
     if (mode === 'search') {
       search_entry_states = {}
       drive_updated_by_toggle = true
@@ -1321,33 +1372,102 @@ async function graph_explorer (opts) {
       base_path_counts[node.base_path].push(node.instance_path)
     }
 
-    // Store only duplicates
+    // Store only duplicates with first occurrence info
     for (const [base_path, instance_paths] of Object.entries(base_path_counts)) {
       if (instance_paths.length > 1) {
-        duplicate_entries_map[base_path] = instance_paths
+        duplicate_entries_map[base_path] = {
+          instances: instance_paths,
+          first_instance: instance_paths[0] // First occurrence in view order
+        }
       }
     }
   }
 
   function get_next_duplicate_instance (base_path, current_instance_path) {
     const duplicates = duplicate_entries_map[base_path]
-    if (!duplicates || duplicates.length <= 1) return null
+    if (!duplicates || duplicates.instances.length <= 1) return null
 
-    const current_index = duplicates.indexOf(current_instance_path)
-    if (current_index === -1) return duplicates[0]
+    const current_index = duplicates.instances.indexOf(current_instance_path)
+    if (current_index === -1) return duplicates.instances[0]
 
-    const next_index = (current_index + 1) % duplicates.length
-    return duplicates[next_index]
+    const next_index = (current_index + 1) % duplicates.instances.length
+    return duplicates.instances[next_index]
   }
 
   function has_duplicates (base_path) {
-    return duplicate_entries_map[base_path] && duplicate_entries_map[base_path].length > 1
+    return duplicate_entries_map[base_path] && duplicate_entries_map[base_path].instances.length > 1
+  }
+
+  function is_first_duplicate (base_path, instance_path) {
+    const duplicates = duplicate_entries_map[base_path]
+    return duplicates && duplicates.first_instance === instance_path
   }
 
   function cycle_to_next_duplicate (base_path, current_instance_path) {
     const next_instance_path = get_next_duplicate_instance(base_path, current_instance_path)
     if (next_instance_path) {
-      scroll_to_and_highlight_instance(next_instance_path)
+      remove_jump_button_from_entry(current_instance_path)
+
+      // First, handle the scroll and DOM updates without drive state changes
+      scroll_to_and_highlight_instance(next_instance_path, current_instance_path)
+
+      // Manually update DOM styling
+      update_last_clicked_styling(next_instance_path)
+      last_clicked_node = next_instance_path
+      drive_updated_by_scroll = true // Prevent onbatch from interfering with scroll
+      drive_updated_by_match = true
+      update_drive_state({ type: 'runtime/last_clicked_node', message: next_instance_path })
+
+      // Add jump button to the target entry (with a small delay to ensure DOM is ready)
+      setTimeout(() => {
+        const target_element = shadow.querySelector(`[data-instance_path="${CSS.escape(next_instance_path)}"]`)
+        if (target_element) {
+          add_jump_button_to_matching_entry(target_element, base_path, next_instance_path)
+        }
+      }, 10)
+    }
+  }
+
+  function update_last_clicked_styling (new_instance_path) {
+    // Remove last-clicked class from all elements
+    const all_nodes = shadow.querySelectorAll('.node.last-clicked')
+    all_nodes.forEach(node => node.classList.remove('last-clicked'))
+
+    // Add last-clicked class to the new element
+    if (new_instance_path) {
+      const new_element = shadow.querySelector(`[data-instance_path="${CSS.escape(new_instance_path)}"]`)
+      if (new_element) {
+        new_element.classList.add('last-clicked')
+      }
+    }
+  }
+
+  function remove_jump_button_from_entry (instance_path) {
+    const current_element = shadow.querySelector(`[data-instance_path="${CSS.escape(instance_path)}"]`)
+    if (current_element) {
+      // restore the wand icon
+      const node_data = view.find(n => n.instance_path === instance_path)
+      if (node_data && node_data.base_path === '/' && instance_path === '|/') {
+        const wand_el = current_element.querySelector('.wand.navigate-to-hub')
+        if (wand_el && root_wand_state) {
+          wand_el.textContent = root_wand_state.content
+          wand_el.className = root_wand_state.className
+          wand_el.onclick = root_wand_state.onclick
+
+          root_wand_state = null
+        }
+        return
+      }
+
+      // Regular behavior for non-root nodes
+      const button_container = current_element.querySelector('.indent-btn-container')
+      if (button_container) {
+        button_container.remove()
+        // Restore left-indent class
+        if (node_data && node_data.depth > 0) {
+          current_element.classList.add('left-indent')
+        }
+      }
     }
   }
 
@@ -1355,20 +1475,50 @@ async function graph_explorer (opts) {
     // Check if jump button already exists
     if (el.querySelector('.navigate-to-hub')) return
 
-    // Get current left padding value to match the width
-    const computedStyle = window.getComputedStyle(el)
-    const leftPadding = computedStyle.paddingLeft
+    // replace the wand icon temporarily
+    if (base_path === '/' && instance_path === '|/') {
+      const wand_el = el.querySelector('.wand')
+      if (wand_el) {
+        // Store original wand state in JavaScript variable
+        root_wand_state = {
+          content: wand_el.textContent,
+          className: wand_el.className,
+          onclick: wand_el.onclick
+        }
 
-    // Create a div to replace the left padding
+        // Replace with jump button
+        wand_el.textContent = '^'
+        wand_el.className = 'wand navigate-to-hub clickable'
+        wand_el.onclick = (event) => {
+          event.stopPropagation()
+          last_clicked_node = instance_path
+          drive_updated_by_match = true
+          update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
+          update_last_clicked_styling(instance_path)
+
+          cycle_to_next_duplicate(base_path, instance_path)
+        }
+      }
+      return
+    }
+
     const indent_button_div = document.createElement('div')
     indent_button_div.className = 'indent-btn-container'
-    indent_button_div.style.width = leftPadding
 
     const navigate_button = document.createElement('span')
     navigate_button.className = 'navigate-to-hub clickable'
     navigate_button.textContent = '^'
     navigate_button.onclick = (event) => {
       event.stopPropagation() // Prevent triggering the whole entry click again
+      // Manually update last clicked node for jump button
+      last_clicked_node = instance_path
+      drive_updated_by_match = true
+      update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
+      // Manually update DOM classes for last-clicked styling
+      update_last_clicked_styling(instance_path)
+
       cycle_to_next_duplicate(base_path, instance_path)
     }
 
@@ -1379,22 +1529,24 @@ async function graph_explorer (opts) {
     el.insertBefore(indent_button_div, el.firstChild)
   }
 
-  function scroll_to_and_highlight_instance (target_instance_path) {
+  function scroll_to_and_highlight_instance (target_instance_path, source_instance_path = null) {
     const target_index = view.findIndex(n => n.instance_path === target_instance_path)
     if (target_index === -1) return
 
     // Calculate scroll position
-    const target_scroll_top = target_index * node_height
-    container.scrollTop = target_scroll_top
+    let target_scroll_top = target_index * node_height
 
-    // Find and highlight the DOM element
-    const target_element = shadow.querySelector(`[data-instance_path="${CSS.escape(target_instance_path)}"]`)
-    if (target_element) {
-      target_element.classList.add('highlight-instance')
-      setTimeout(() => {
-        target_element.classList.remove('highlight-instance')
-      }, 2000)
+    if (source_instance_path) {
+      const source_index = view.findIndex(n => n.instance_path === source_instance_path)
+      if (source_index !== -1) {
+        const source_scroll_top = source_index * node_height
+        const current_scroll_top = container.scrollTop
+        const source_visible_offset = source_scroll_top - current_scroll_top
+        target_scroll_top = target_scroll_top - source_visible_offset
+      }
     }
+
+    container.scrollTop = target_scroll_top
   }
 
   /******************************************************************************
@@ -1430,6 +1582,10 @@ async function graph_explorer (opts) {
     }
     if (drive_updated_by_search) {
       drive_updated_by_search = false
+      return true
+    }
+    if (drive_updated_by_match) {
+      drive_updated_by_match = false
       return true
     }
     return false
