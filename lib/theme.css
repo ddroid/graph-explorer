@@ -132,6 +132,10 @@
   color: #e06c75;
   font-weight: bold;
 }
+.first-matching-entry .name {
+  color: #b48ead;
+  font-weight: bold;
+}
 
 /* Base sizes for desktop (768px and above) */
 .node {
