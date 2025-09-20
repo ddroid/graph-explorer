@@ -21,8 +21,7 @@
   },
   "eslintConfig": {
     "env": {
-      "browser": true,
-      "es2021": true
+      "browser": true
     },
     "rules": {
       "camelcase": 0,

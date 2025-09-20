@@ -63,6 +63,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 17.5px;
 }
 .pipe {
   text-align: center;
@@ -128,18 +129,17 @@
   transition: background-color 0.3s ease;
 }
 .matching-entry .name {
-  color: #e06c75 !important;
+  color: #e06c75;
   font-weight: bold;
 }
 
 /* Base sizes for desktop (768px and above) */
-.left-indent {
-  padding-left: 17.5px !important;
-}
 .node {
   font-size: 14px;
   height: 16px;
-  padding-left: 0;
+}
+.left-indent {
+  padding-left: 17.5px;
 }
 
 .pipe, .blank {
@@ -163,133 +163,143 @@
 /* Medium screens (480px to 767px) - 1.3x scale */
 @media (max-width: 767px) {
   .left-indent {
-    padding-left: 22.75px !important;
+    padding-left: 22.75px;
+  }
+  .indent-btn-container {
+    width: 22.75px;
   }
   .node {
-    font-size: 18px !important;
-    height: 21px !important;
+    font-size: 18px;
+    height: 21px;
   }
   
   .pipe, .blank {
-    width: 11px !important;
-    font-size: 18px !important;
+    width: 11px;
+    font-size: 18px;
   }
   
   .prefix, .icon {
-    font-size: 18px !important;
-    margin-right: 3px !important;
+    font-size: 18px;
+    margin-right: 3px;
   }
   
   .navigate-to-hub {
-    font-size: 16px !important;
-    padding: 3px 5px !important;
-    margin-left: 7px !important;
-    margin-right: 7px !important;
+    font-size: 16px;
+    padding: 3px 5px;
+    margin-left: 7px;
+    margin-right: 7px;
   }
   
   .graph-container {
-    padding: 13px !important;
+    padding: 13px;
   }
   
   .confirm-wrapper {
-    padding-left: 13px !important;
+    padding-left: 13px;
   }
 }
+  /* Height-based responsive adjustments for mobile experience */
+  @media (max-height: 600px) {
+    .left-indent {
+      padding-left: 25px;
+    }
+    .indent-btn-container {
+      width: 25px;
+    }
+    .node {
+      font-size: 20px;
+      height: 24px;
+    }
+    
+    .pipe, .blank {
+      width: 12px;
+      font-size: 20px;
+    }
+    
+    .prefix, .icon {
+      font-size: 20px;
+      margin-right: 3px;
+    }
+    
+    .navigate-to-hub {
+      font-size: 18px;
+      padding: 3px 6px;
+    }
+  }
+  /* Small screens (320px to 479px) - 1.6x scale */
+  @media (max-width: 479px) {
+    .left-indent {
+      padding-left: 28px;
+    }
+    .indent-btn-container {
+      width: 28px;
+    }
+    .node {
+      font-size: 22px;
+      height: 26px;
+    }
+    
+    .pipe, .blank {
+      width: 14px;
+      font-size: 22px;
+    }
+    
+    .prefix, .icon {
+      font-size: 22px;
+      margin-right: 4px;
+    }
+    
+    .navigate-to-hub {
+      font-size: 19px;
+      padding: 4px 6px;
+      margin-left: 8px;
+      margin-right: 8px;
+    }
+    
+    .graph-container {
+      padding: 16px;
+    }
+    
+    .confirm-wrapper {
+      padding-left: 16px;
+    }
+  }
 
-/* Small screens (320px to 479px) - 1.6x scale */
-@media (max-width: 479px) {
-  .left-indent {
-    padding-left: 28px !important;
-  }
-  .node {
-    font-size: 22px !important;
-    height: 26px !important;
-  }
-  
-  .pipe, .blank {
-    width: 14px !important;
-    font-size: 22px !important;
-  }
-  
-  .prefix, .icon {
-    font-size: 22px !important;
-    margin-right: 4px !important;
-  }
-  
-  .navigate-to-hub {
-    font-size: 19px !important;
-    padding: 4px 6px !important;
-    margin-left: 8px !important;
-    margin-right: 8px !important;
-  }
-  
-  .graph-container {
-    padding: 16px !important;
-  }
-  
-  .confirm-wrapper {
-    padding-left: 16px !important;
-  }
-}
+  /* Extra small screens (below 320px) - 2x scale */
+  @media (max-width: 319px) {
+    .left-indent {
+      padding-left: 35px;
+    }
+    .indent-btn-container {
+      width: 35px;
+    }
+    .node {
+      font-size: 28px;
+      height: 32px;
+    }
+    
+    .pipe, .blank {
+      width: 17px;
+      font-size: 28px;
+    }
+    
+    .prefix, .icon {
+      font-size: 28px;
+      margin-right: 4px;
+    }
+    
+    .navigate-to-hub {
+      font-size: 24px;
+      padding: 4px 8px;
+      margin-left: 10px;
+      margin-right: 10px;
+    }
 
-/* Extra small screens (below 320px) - 2x scale */
-@media (max-width: 319px) {
-  .left-indent {
-    padding-left: 35px !important;
-  }
-  .node {
-    font-size: 28px !important;
-    height: 32px !important;
-  }
-  
-  .pipe, .blank {
-    width: 17px !important;
-    font-size: 28px !important;
-  }
-  
-  .prefix, .icon {
-    font-size: 28px !important;
-    margin-right: 4px !important;
-  }
-  
-  .navigate-to-hub {
-    font-size: 24px !important;
-    padding: 4px 8px !important;
-    margin-left: 10px !important;
-    margin-right: 10px !important;
-  }
-  
-  .graph-container {
-    padding: 20px !important;
-  }
-  
-  .confirm-wrapper {
-    padding-left: 20px !important;
-  }
-}
-
-/* Height-based responsive adjustments for mobile experience */
-@media (max-height: 600px) {
-  .left-indent {
-    padding-left: 22.75px !important;
-  }
-  .node {
-    font-size: 20px !important;
-    height: 24px !important;
-  }
-  
-  .pipe, .blank {
-    width: 12px !important;
-    font-size: 20px !important;
-  }
-  
-  .prefix, .icon {
-    font-size: 20px !important;
-    margin-right: 3px !important;
-  }
-  
-  .navigate-to-hub {
-    font-size: 18px !important;
-    padding: 3px 6px !important;
-  }
-}
+    .graph-container {
+      padding: 20px;
+    }
+    
+    .confirm-wrapper {
+      padding-left: 20px;
+    }
+  }  
