@@ -1,7 +1,7 @@
 /* Container setup for responsive scaling */
-.graph-explorer-wrapper {
+.graph-container {
   container-type: inline-size;
-  container-name: graph-explorer;
+  container-name: graph-container;
 }
 
 .graph-container, .node {
@@ -165,7 +165,7 @@
 }
 
 /* Medium screens (480px to 767px) - 1.3x scale */
-@media (max-width: 767px) {
+@container graph-container (max-width: 767px) {
   .left-indent {
     padding-left: 22.75px;
   }
@@ -206,7 +206,7 @@
   }
 }
   /* Height-based responsive adjustments for mobile experience */
-  @media (max-height: 600px) {
+  @container graph-container (max-height: 600px) {
     .left-indent {
       padding-left: 25px;
     }
@@ -234,7 +234,7 @@
     }
   }
   /* Small screens (320px to 479px) - 1.6x scale */
-  @media (max-width: 479px) {
+  @container graph-container (max-width: 479px) {
     .left-indent {
       padding-left: 28px;
     }
@@ -276,7 +276,7 @@
   }
 
   /* Extra small screens (below 320px) - 2x scale */
-  @media (max-width: 319px) {
+  @container graph-container (max-width: 319px) {
     .left-indent {
       padding-left: 35px;
     }
