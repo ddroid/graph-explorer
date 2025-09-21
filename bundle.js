@@ -35,10 +35,13 @@ async function graph_explorer (opts) {
   let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
   let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
   let drive_updated_by_match = false // Flag to prevent `onbatch` from re-rendering on matching entry updates.
+  let drive_updated_by_tracking = false // Flag to prevent `onbatch` from re-rendering on view order tracking updates.
+  let is_loading_from_drive = false // Flag to prevent saving to drive during initial load
   let multi_select_enabled = false // Flag to enable multi-select mode without ctrl key
   let select_between_enabled = false // Flag to enable select between mode
   let select_between_first_node = null // First node selected in select between mode
   let duplicate_entries_map = {}
+  let view_order_tracking = {} // Tracks instance paths by base path in real time as they are added into the view through toggle expand/collapse actions.
   let is_rendering = false // Flag to prevent concurrent rendering operations in virtual scrolling.
   let spacer_element = null // DOM element used to manage scroll position when hubs are toggled.
   let spacer_initial_height = 0
@@ -103,15 +106,15 @@ async function graph_explorer (opts) {
     for (const { type, paths } of batch) {
       if (!paths || !paths.length) continue
       const data = await Promise.all(
-        paths.map(path =>
-          drive
+        paths.map(path => {
+          return drive
             .get(path)
             .then(file => (file ? file.raw : null))
             .catch(e => {
               console.error(`Error getting file from drive: ${path}`, e)
               return null
             })
-        )
+        })
       )
       // Call the appropriate handler based on `type`.
       const func = on[type]
@@ -147,6 +150,7 @@ async function graph_explorer (opts) {
           expanded_hubs: false
         }
       }
+      // trcking will be initialized later if drive data is empty
       build_and_render_view()
     } else {
       console.warn('Root path "/" not found in entries. Clearing view.')
@@ -164,7 +168,8 @@ async function graph_explorer (opts) {
       'confirmed_selected.json': handle_confirmed_paths,
       'instance_states.json': handle_instance_states,
       'search_entry_states.json': handle_search_entry_states,
-      'last_clicked_node.json': handle_last_clicked_node
+      'last_clicked_node.json': handle_last_clicked_node,
+      'view_order_tracking.json': handle_view_order_tracking
     }
     let needs_render = false
     const render_nodes_needed = new Set()
@@ -241,6 +246,20 @@ async function graph_explorer (opts) {
       last_clicked_node = typeof value === 'string' ? value : null
       if (old_last_clicked) render_nodes_needed.add(old_last_clicked)
       if (last_clicked_node) render_nodes_needed.add(last_clicked_node)
+    }
+
+    function handle_view_order_tracking ({ value }) {
+      if (typeof value === 'object' && value && !Array.isArray(value)) {
+        is_loading_from_drive = true
+        view_order_tracking = value
+        is_loading_from_drive = false
+        if (Object.keys(view_order_tracking).length === 0) {
+          initialize_tracking_from_current_state()
+        }
+        return { needs_render: true }
+      } else {
+        console.warn('view_order_tracking is not a valid object, ignoring.', value)
+      }
     }
   }
 
@@ -476,6 +495,9 @@ async function graph_explorer (opts) {
       all_entries
     })
 
+    // Recalculate duplicates after view is built
+    collect_all_duplicate_entries()
+
     const new_scroll_top = calculate_new_scroll_top({
       old_scroll_top,
       old_view,
@@ -497,13 +519,6 @@ async function graph_explorer (opts) {
     observer.observe(top_sentinel)
     observer.observe(bottom_sentinel)
 
-    const set_scroll_and_sync = () => {
-      drive_updated_by_scroll = true
-      container.scrollTop = new_scroll_top
-      container.scrollLeft = old_scroll_left
-      vertical_scroll_value = container.scrollTop
-    }
-
     // Handle the spacer element used for keep entries static wrt cursor by scrolling when hubs are toggled.
     handle_spacer_element({
       hub_toggle,
@@ -511,6 +526,13 @@ async function graph_explorer (opts) {
       new_scroll_top,
       sync_fn: set_scroll_and_sync
     })
+
+    function set_scroll_and_sync () {
+      drive_updated_by_scroll = true
+      container.scrollTop = new_scroll_top
+      container.scrollLeft = old_scroll_left
+      vertical_scroll_value = container.scrollTop
+    }
   }
 
   // Traverses the hierarchical `all_entries` data and builds a flat `view` array for rendering.
@@ -641,7 +663,6 @@ async function graph_explorer (opts) {
     const el = document.createElement('div')
     el.className = `node type-${entry.type || 'unknown'}`
     el.dataset.instance_path = instance_path
-
     if (is_search_match) {
       el.classList.add('search-result')
       if (is_direct_match) el.classList.add('direct-match')
@@ -660,7 +681,6 @@ async function graph_explorer (opts) {
     }
 
     if (base_path === '/' && instance_path === '|/') return create_root_node({ state, has_subs, instance_path })
-
     const prefix_class_name = get_prefix({ is_last_sub, has_subs, state, is_hub, is_hub_on_top })
     const pipe_html = pipe_trail.map(p => `<span class="${p ? 'pipe' : 'blank'}"></span>`).join('')
     const prefix_class = has_subs ? 'prefix clickable' : 'prefix'
@@ -674,7 +694,6 @@ async function graph_explorer (opts) {
     let has_duplicate_entries = false
     let is_first_occurrence = false
     if (mode !== 'search' && hubs_flag !== 'true') { // disabled in search mode and when hubs_flag is 'true'
-      collect_all_duplicate_entries()
       has_duplicate_entries = has_duplicates(base_path)
 
       // coloring class for duplicates
@@ -697,17 +716,7 @@ async function graph_explorer (opts) {
 
     // For matching entries, disable normal event listener and add handler to whole entry to create button for jump to next duplicate
     if (has_duplicate_entries && !is_first_occurrence && mode !== 'search' && hubs_flag !== 'true') {
-      el.onclick = () => {
-        // Manually update last clicked
-        last_clicked_node = instance_path
-        drive_updated_by_match = true
-
-        update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
-
-        // Manually update DOM
-        update_last_clicked_styling(instance_path)
-        add_jump_button_to_matching_entry(el, base_path, instance_path)
-      }
+      el.onclick = jump_out_to_next_duplicate
     } else {
       const icon_el = el.querySelector('.icon')
       if (icon_el && has_hubs && base_path !== '/') {
@@ -747,6 +756,17 @@ async function graph_explorer (opts) {
     if (selected_instance_paths.includes(instance_path) || confirmed_instance_paths.includes(instance_path)) el.appendChild(create_confirm_checkbox(instance_path))
 
     return el
+    function jump_out_to_next_duplicate () {
+      // Manually update last clicked
+      last_clicked_node = instance_path
+      drive_updated_by_match = true
+
+      update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
+      // Manually update DOM
+      update_last_clicked_styling(instance_path)
+      add_jump_button_to_matching_entry(el, base_path, instance_path)
+    }
   }
 
   // `re_render_node` updates a single node in the DOM, used when only its selection state changes.
@@ -1186,7 +1206,23 @@ async function graph_explorer (opts) {
 
   function toggle_subs (instance_path) {
     const state = get_or_create_state(instance_states, instance_path)
+    const was_expanded = state.expanded_subs
     state.expanded_subs = !state.expanded_subs
+
+    // Update view order tracking for the toggled subs
+    const base_path = instance_path.split('|').pop()
+    const entry = all_entries[base_path]
+    if (entry && Array.isArray(entry.subs)) {
+      entry.subs.forEach(sub_path => {
+        if (was_expanded) {
+          // Collapsing so
+          remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+        } else {
+          // Expanding so
+          add_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+        }
+      })
+    }
 
     last_clicked_node = instance_path
     update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
@@ -1199,8 +1235,24 @@ async function graph_explorer (opts) {
 
   function toggle_hubs (instance_path) {
     const state = get_or_create_state(instance_states, instance_path)
+    const was_expanded = state.expanded_hubs
     state.expanded_hubs ? hub_num-- : hub_num++
     state.expanded_hubs = !state.expanded_hubs
+
+    // Update view order tracking for the toggled hubs
+    const base_path = instance_path.split('|').pop()
+    const entry = all_entries[base_path]
+    if (entry && Array.isArray(entry.hubs)) {
+      entry.hubs.forEach(hub_path => {
+        if (was_expanded) {
+          // Collapsing so
+          remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+        } else {
+          // Expanding so
+          add_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+        }
+      })
+    }
 
     last_clicked_node = instance_path
     drive_updated_by_scroll = true // Prevent onbatch interference with hub spacer
@@ -1238,6 +1290,9 @@ async function graph_explorer (opts) {
   function reset () {
     // reset all of the manual expansions made
     instance_states = {}
+    view_order_tracking = {} // Clear view order tracking on reset
+    drive_updated_by_tracking = true
+    update_drive_state({ type: 'runtime/view_order_tracking', message: view_order_tracking })
     if (mode === 'search') {
       search_entry_states = {}
       drive_updated_by_toggle = true
@@ -1264,7 +1319,8 @@ async function graph_explorer (opts) {
   function onscroll () {
     if (scroll_update_pending) return
     scroll_update_pending = true
-    requestAnimationFrame(() => {
+    requestAnimationFrame(scroll_frames)
+    function scroll_frames () {
       const scroll_delta = vertical_scroll_value - container.scrollTop
       // Handle removal of the scroll spacer.
       if (spacer_element && scroll_delta > 0 && container.scrollTop === 0) {
@@ -1277,7 +1333,7 @@ async function graph_explorer (opts) {
       vertical_scroll_value = update_scroll_state({ current_value: vertical_scroll_value, new_value: container.scrollTop, name: 'vertical_scroll_value' })
       horizontal_scroll_value = update_scroll_state({ current_value: horizontal_scroll_value, new_value: container.scrollLeft, name: 'horizontal_scroll_value' })
       scroll_update_pending = false
-    })
+    }
   }
 
   async function fill_viewport_downwards () {
@@ -1364,16 +1420,8 @@ async function graph_explorer (opts) {
 
   function collect_all_duplicate_entries () {
     duplicate_entries_map = {}
-    const base_path_counts = {}
-    for (const node of view) {
-      if (!base_path_counts[node.base_path]) {
-        base_path_counts[node.base_path] = []
-      }
-      base_path_counts[node.base_path].push(node.instance_path)
-    }
-
-    // Store only duplicates with first occurrence info
-    for (const [base_path, instance_paths] of Object.entries(base_path_counts)) {
+    // Use view_order_tracking for duplicate detection
+    for (const [base_path, instance_paths] of Object.entries(view_order_tracking)) {
       if (instance_paths.length > 1) {
         duplicate_entries_map[base_path] = {
           instances: instance_paths,
@@ -1381,6 +1429,101 @@ async function graph_explorer (opts) {
         }
       }
     }
+  }
+
+  function initialize_tracking_from_current_state () {
+    const root_path = '/'
+    const root_instance_path = '|/'
+    if (all_entries[root_path]) {
+      add_instance_to_view_tracking(root_path, root_instance_path)
+      // Add initially expanded subs if any
+      const root_entry = all_entries[root_path]
+      if (root_entry && Array.isArray(root_entry.subs)) {
+        root_entry.subs.forEach(sub_path => {
+          add_instances_recursively(sub_path, root_instance_path, instance_states, all_entries)
+        })
+      }
+    }
+  }
+
+  function add_instance_to_view_tracking (base_path, instance_path) {
+    if (!view_order_tracking[base_path]) view_order_tracking[base_path] = []
+    if (!view_order_tracking[base_path].includes(instance_path)) {
+      view_order_tracking[base_path].push(instance_path)
+
+      // Only save to drive if not currently loading from drive
+      if (!is_loading_from_drive) {
+        drive_updated_by_tracking = true
+        update_drive_state({ type: 'runtime/view_order_tracking', message: view_order_tracking })
+      }
+    }
+  }
+
+  function remove_instance_from_view_tracking (base_path, instance_path) {
+    if (view_order_tracking[base_path]) {
+      const index = view_order_tracking[base_path].indexOf(instance_path)
+      if (index !== -1) {
+        view_order_tracking[base_path].splice(index, 1)
+        // Clean up empty arrays
+        if (view_order_tracking[base_path].length === 0) {
+          delete view_order_tracking[base_path]
+        }
+
+        // Only save to drive if not currently loading from drive
+        if (!is_loading_from_drive) {
+          drive_updated_by_tracking = true
+          update_drive_state({ type: 'runtime/view_order_tracking', message: view_order_tracking })
+        }
+      }
+    }
+  }
+
+  // Recursively add instances to tracking when expanding
+  function add_instances_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(instance_states, instance_path)
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      entry.hubs.forEach(hub_path => {
+        add_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      })
+    }
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      entry.subs.forEach(sub_path => {
+        add_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+      })
+    }
+
+    // Add the instance itself
+    add_instance_to_view_tracking(base_path, instance_path)
+  }
+
+  // Recursively remove instances from tracking when collapsing
+  function remove_instances_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(instance_states, instance_path)
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      entry.hubs.forEach(hub_path => {
+        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      })
+    }
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      entry.subs.forEach(sub_path => {
+        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+      })
+    }
+
+    // Remove the instance itself
+    remove_instance_from_view_tracking(base_path, instance_path)
   }
 
   function get_next_duplicate_instance (base_path, current_instance_path) {
@@ -1419,12 +1562,13 @@ async function graph_explorer (opts) {
       update_drive_state({ type: 'runtime/last_clicked_node', message: next_instance_path })
 
       // Add jump button to the target entry (with a small delay to ensure DOM is ready)
-      setTimeout(() => {
+      setTimeout(jump_out, 10)
+      function jump_out () {
         const target_element = shadow.querySelector(`[data-instance_path="${CSS.escape(next_instance_path)}"]`)
         if (target_element) {
           add_jump_button_to_matching_entry(target_element, base_path, next_instance_path)
         }
-      }, 10)
+      }
     }
   }
 
@@ -1588,6 +1732,10 @@ async function graph_explorer (opts) {
       drive_updated_by_match = false
       return true
     }
+    if (drive_updated_by_tracking) {
+      drive_updated_by_tracking = false
+      return true
+    }
     return false
   }
 
@@ -1640,17 +1788,7 @@ async function graph_explorer (opts) {
       container.appendChild(spacer_element)
 
       if (hub_toggle) {
-        requestAnimationFrame(() => {
-          const container_height = container.clientHeight
-          const content_height = view.length * node_height
-          const max_scroll_top = content_height - container_height
-
-          if (new_scroll_top > max_scroll_top) {
-            spacer_initial_height = new_scroll_top - max_scroll_top
-            spacer_element.style.height = `${spacer_initial_height}px`
-          }
-          sync_fn()
-        })
+        requestAnimationFrame(spacer_frames)
       } else {
         spacer_element.style.height = `${existing_height}px`
         requestAnimationFrame(sync_fn)
@@ -1659,6 +1797,17 @@ async function graph_explorer (opts) {
       spacer_element = null
       spacer_initial_height = 0
       requestAnimationFrame(sync_fn)
+    }
+    function spacer_frames () {
+      const container_height = container.clientHeight
+      const content_height = view.length * node_height
+      const max_scroll_top = content_height - container_height
+
+      if (new_scroll_top > max_scroll_top) {
+        spacer_initial_height = new_scroll_top - max_scroll_top
+        spacer_element.style.height = `${spacer_initial_height}px`
+      }
+      sync_fn()
     }
   }
 
@@ -1740,7 +1889,8 @@ function fallback_module () {
           'confirmed_selected.json': { raw: '[]' },
           'instance_states.json': { raw: '{}' },
           'search_entry_states.json': { raw: '{}' },
-          'last_clicked_node.json': { raw: 'null' }
+          'last_clicked_node.json': { raw: 'null' },
+          'view_order_tracking.json': { raw: '{}' }
         },
         'mode/': {
           'current_mode.json': { raw: '"menubar"' },
