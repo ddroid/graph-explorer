@@ -124,19 +124,21 @@ async function graph_explorer (opts) {
     for (const { type, paths } of batch) {
       if (!paths || !paths.length) continue
       const data = await Promise.all(
-        paths.map(path => {
-          return drive
-            .get(path)
-            .then(file => (file ? file.raw : null))
-            .catch(e => {
-              console.error(`Error getting file from drive: ${path}`, e)
-              return null
-            })
-        })
+        paths.map(path => batch_get(path))
       )
       // Call the appropriate handler based on `type`.
       const func = on[type]
       func ? func({ data, paths }) : fail(data, type)
+    }
+
+    function batch_get (path) {
+      return drive
+        .get(path)
+        .then(file => (file ? file.raw : null))
+        .catch(e => {
+          console.error(`Error getting file from drive: ${path}`, e)
+          return null
+        })
     }
   }
 
@@ -198,19 +200,7 @@ async function graph_explorer (opts) {
     let needs_render = false
     const render_nodes_needed = new Set()
 
-    paths.forEach((path, i) => {
-      if (data[i] === null) return
-      const value = parse_json_data(data[i], path)
-      if (value === null) return
-
-      // Extract filename from path and use handler if available
-      const filename = path.split('/').pop()
-      const handler = on_runtime_paths[filename]
-      if (handler) {
-        const result = handler({ value, render_nodes_needed })
-        if (result?.needs_render) needs_render = true
-      }
-    })
+    paths.forEach((path, i) => runtime_handler(path, data[i]))
 
     if (needs_render) {
       if (mode === 'search' && search_query) {
@@ -221,6 +211,20 @@ async function graph_explorer (opts) {
       }
     } else if (render_nodes_needed.size > 0) {
       render_nodes_needed.forEach(re_render_node)
+    }
+
+    function runtime_handler (path, data) {
+      if (data === null) return
+      const value = parse_json_data(data, path)
+      if (value === null) return
+
+      // Extract filename from path and use handler if available
+      const filename = path.split('/').pop()
+      const handler = on_runtime_paths[filename]
+      if (handler) {
+        const result = handler({ value, render_nodes_needed })
+        if (result?.needs_render) needs_render = true
+      }
     }
 
     function handle_node_height ({ value }) {
@@ -303,21 +307,7 @@ async function graph_explorer (opts) {
     }
     let new_current_mode, new_previous_mode, new_search_query, new_multi_select_enabled, new_select_between_enabled
 
-    paths.forEach((path, i) => {
-      const value = parse_json_data(data[i], path)
-      if (value === null) return
-
-      const filename = path.split('/').pop()
-      const handler = on_mode_paths[filename]
-      if (handler) {
-        const result = handler({ value })
-        if (result?.current_mode !== undefined) new_current_mode = result.current_mode
-        if (result?.previous_mode !== undefined) new_previous_mode = result.previous_mode
-        if (result?.search_query !== undefined) new_search_query = result.search_query
-        if (result?.multi_select_enabled !== undefined) new_multi_select_enabled = result.multi_select_enabled
-        if (result?.select_between_enabled !== undefined) new_select_between_enabled = result.select_between_enabled
-      }
-    })
+    paths.forEach((path, i) => mode_handler(path, data[i]))
 
     if (typeof new_search_query === 'string') search_query = new_search_query
     if (new_previous_mode) previous_mode = new_previous_mode
@@ -351,6 +341,21 @@ async function graph_explorer (opts) {
     handle_mode_change()
     if (mode === 'search' && search_query) perform_search(search_query)
 
+    function mode_handler (path, data) {
+      const value = parse_json_data(data, path)
+      if (value === null) return
+
+      const filename = path.split('/').pop()
+      const handler = on_mode_paths[filename]
+      if (handler) {
+        const result = handler({ value })
+        if (result?.current_mode !== undefined) new_current_mode = result.current_mode
+        if (result?.previous_mode !== undefined) new_previous_mode = result.previous_mode
+        if (result?.search_query !== undefined) new_search_query = result.search_query
+        if (result?.multi_select_enabled !== undefined) new_multi_select_enabled = result.multi_select_enabled
+        if (result?.select_between_enabled !== undefined) new_select_between_enabled = result.select_between_enabled
+      }
+    }
     function handle_current_mode ({ value }) {
       return { current_mode: value }
     }
@@ -377,8 +382,10 @@ async function graph_explorer (opts) {
       'hubs.json': handle_hubs_flag
     }
 
-    paths.forEach((path, i) => {
-      const value = parse_json_data(data[i], path)
+    paths.forEach((path, i) => flags_handler(path, data[i]))
+
+    function flags_handler (path, data) {
+      const value = parse_json_data(data, path)
       if (value === null) return
 
       const filename = path.split('/').pop()
@@ -394,7 +401,7 @@ async function graph_explorer (opts) {
           }
         }
       }
-    })
+    }
 
     function handle_hubs_flag (value) {
       if (typeof value === 'string' && ['default', 'true', 'false'].includes(value)) {
@@ -741,7 +748,9 @@ async function graph_explorer (opts) {
 
     if (selected_instance_paths.includes(instance_path)) el.classList.add('selected')
     if (confirmed_instance_paths.includes(instance_path)) el.classList.add('confirmed')
-    if (last_clicked_node === instance_path) el.classList.add('last-clicked')
+    if (last_clicked_node === instance_path) {
+      mode === 'search' ? el.classList.add('search-last-clicked') : el.classList.add('last-clicked')
+    }
 
     const has_hubs = hubs_flag === 'false' ? false : Array.isArray(entry.hubs) && entry.hubs.length > 0
     const has_subs = Array.isArray(entry.subs) && entry.subs.length > 0
@@ -811,13 +820,7 @@ async function graph_explorer (opts) {
       // Special handling for first duplicate entry - it should have normal select behavior but also show jump button
       const name_el = el.querySelector('.name')
       if (has_duplicate_entries && is_first_occurrence && mode !== 'search' && hubs_flag !== 'true') {
-        name_el.onclick = ev => {
-          select_node(ev, instance_path)
-          // Also add jump button functionality for first occurrence
-          setTimeout(() => {
-            add_jump_button_to_matching_entry(el, base_path, instance_path)
-          }, 10)
-        }
+        name_el.onclick = ev => jump_and_select_matching_entry(ev, instance_path)
       } else {
         name_el.onclick = ev => mode === 'search' ? handle_search_name_click(ev, instance_path) : select_node(ev, instance_path)
       }
@@ -826,6 +829,13 @@ async function graph_explorer (opts) {
     if (selected_instance_paths.includes(instance_path) || confirmed_instance_paths.includes(instance_path)) el.appendChild(create_confirm_checkbox(instance_path))
 
     return el
+    function jump_and_select_matching_entry (ev, instance_path) {
+      select_node(ev, instance_path)
+      // Also add jump button functionality for first occurrence
+      setTimeout(() => {
+        add_jump_button_to_matching_entry(el, base_path, instance_path)
+      }, 10)
+    }
     function jump_out_to_next_duplicate () {
       // Manually update last clicked
       last_clicked_node = instance_path
@@ -917,11 +927,11 @@ async function graph_explorer (opts) {
 
     const multi_select_button = document.createElement('button')
     multi_select_button.innerHTML = `Multi Select: ${multi_select_enabled ? 'true' : 'false'}`
-    multi_select_button.onclick = mode === 'search' ? null : toggle_multi_select
+    multi_select_button.onclick = toggle_multi_select
 
     const select_between_button = document.createElement('button')
     select_between_button.innerHTML = `Select Between: ${select_between_enabled ? 'true' : 'false'}`
-    select_between_button.onclick = mode === 'search' ? null : toggle_select_between
+    select_between_button.onclick = toggle_select_between
 
     menubar.replaceChildren(search_button, multi_select_button, select_between_button)
   }
@@ -957,6 +967,20 @@ async function graph_explorer (opts) {
     const target_mode = mode === 'search' ? previous_mode : 'search'
     console.log('[SEARCH DEBUG] Switching mode from', mode, 'to', target_mode)
     if (mode === 'search') {
+      // When switching from search to default mode, expand selected entries
+      if (selected_instance_paths.length > 0) {
+        console.log('[SEARCH DEBUG] Expanding selected entries in default mode:', selected_instance_paths)
+        expand_selected_entries_in_default(selected_instance_paths)
+        drive_updated_by_toggle = true
+        update_drive_state({ type: 'runtime/instance_states', message: instance_states })
+      }
+      // Reset select-between mode when leaving search mode
+      if (select_between_enabled) {
+        select_between_enabled = false
+        select_between_first_node = null
+        update_drive_state({ type: 'mode/select_between_enabled', message: false })
+        console.log('[SEARCH DEBUG] Reset select-between mode when leaving search')
+      }
       search_query = ''
       update_drive_state({ type: 'mode/search_query', message: '' })
     }
@@ -1249,7 +1273,7 @@ async function graph_explorer (opts) {
   }
 
   // Add the clicked entry and all its parents in the default tree
-  function search_expand_into_default (target_instance_path) {
+  function expand_entry_path_in_default (target_instance_path) {
     console.log('[SEARCH DEBUG] search_expand_into_default called:', {
       target_instance_path,
       current_mode: mode,
@@ -1272,10 +1296,6 @@ async function graph_explorer (opts) {
 
     console.log('[SEARCH DEBUG] Parsed instance path parts:', parts)
 
-    console.log('[SEARCH DEBUG] About to call handle_search_node_click before mode transition')
-    handle_search_node_click(target_instance_path)
-
-    console.log('[SEARCH DEBUG] Setting up default mode expansion states')
     const root_state = get_or_create_state(instance_states, '|/')
     root_state.expanded_subs = true
 
@@ -1304,6 +1324,36 @@ async function graph_explorer (opts) {
         console.log('[SEARCH DEBUG] Expanded hubs for:', parent_instance_path)
       }
     }
+  }
+
+  // expand multiple selected entry in the default tree
+  function expand_selected_entries_in_default (selected_paths) {
+    console.log('[SEARCH DEBUG] expand_selected_entries_in_default called:', {
+      selected_paths,
+      current_mode: mode,
+      search_query,
+      previous_mode
+    })
+
+    if (!Array.isArray(selected_paths) || selected_paths.length === 0) {
+      console.warn('[SEARCH DEBUG] No valid selected paths provided')
+      return
+    }
+
+    // expand foreach selected path
+    selected_paths.forEach(path => expand_entry_path_in_default(path))
+
+    console.log('[SEARCH DEBUG] All selected entries expanded in default mode')
+  }
+
+  // Add the clicked entry and all its parents in the default tree
+  function search_expand_into_default (target_instance_path) {
+    if (!target_instance_path) {
+      return
+    }
+
+    handle_search_node_click(target_instance_path)
+    expand_entry_path_in_default(target_instance_path)
 
     console.log('[SEARCH DEBUG] Current mode before switch:', mode)
     console.log('[SEARCH DEBUG] Target previous_mode:', previous_mode)
@@ -1313,7 +1363,7 @@ async function graph_explorer (opts) {
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
     search_query = ''
-    update_drive_state({ type: 'mode/query', message: '' })
+    update_drive_state({ type: 'mode/search_query', message: '' })
 
     console.log('[SEARCH DEBUG] About to switch from search mode to:', previous_mode)
     update_drive_state({ type: 'mode/current_mode', message: previous_mode })
@@ -1353,17 +1403,7 @@ async function graph_explorer (opts) {
     // Update view order tracking for the toggled subs
     const base_path = instance_path.split('|').pop()
     const entry = all_entries[base_path]
-    if (entry && Array.isArray(entry.subs)) {
-      entry.subs.forEach(sub_path => {
-        if (was_expanded) {
-          // Collapsing so
-          remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-        } else {
-          // Expanding so
-          add_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-        }
-      })
-    }
+    if (entry && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => add_or_remove_subs_instance_recursively(sub_path, instance_path, instance_states, all_entries))
 
     last_clicked_node = instance_path
     update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
@@ -1372,6 +1412,16 @@ async function graph_explorer (opts) {
     // Set a flag to prevent the subsequent `onbatch` call from causing a render loop.
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
+
+    function add_or_remove_subs_instance_recursively (sub_path, instance_path, instance_states, all_entries) {
+      if (was_expanded) {
+        // Collapsing so
+        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+      } else {
+        // Expanding so
+        add_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+      }
+    }
   }
 
   function toggle_hubs (instance_path) {
@@ -1383,17 +1433,7 @@ async function graph_explorer (opts) {
     // Update view order tracking for the toggled hubs
     const base_path = instance_path.split('|').pop()
     const entry = all_entries[base_path]
-    if (entry && Array.isArray(entry.hubs)) {
-      entry.hubs.forEach(hub_path => {
-        if (was_expanded) {
-          // Collapsing so
-          remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-        } else {
-          // Expanding so
-          add_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-        }
-      })
-    }
+    if (entry && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => add_or_remove_hubs_instance_recursively(hub_path, instance_path, instance_states, all_entries))
 
     last_clicked_node = instance_path
     drive_updated_by_scroll = true // Prevent onbatch interference with hub spacer
@@ -1402,6 +1442,16 @@ async function graph_explorer (opts) {
     build_and_render_view(instance_path, true)
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
+
+    function add_or_remove_hubs_instance_recursively (hub_path, instance_path, instance_states, all_entries) {
+      if (was_expanded) {
+        // Collapsing so
+        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      } else {
+        // Expanding so
+        add_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      }
+    }
   }
 
   function toggle_search_subs (instance_path) {
@@ -1502,24 +1552,26 @@ async function graph_explorer (opts) {
     // Remove `last-clicked` class from all search result nodes
     const search_nodes = container.querySelectorAll('.node.search-result')
     console.log('[SEARCH DEBUG] Found search result nodes:', search_nodes.length)
-    search_nodes.forEach(node => {
-      const was_last_clicked = node.classList.contains('last-clicked')
-      node.classList.remove('last-clicked')
-      if (was_last_clicked) {
-        console.log('[SEARCH DEBUG] Removed last-clicked from:', node.dataset.instance_path)
-      }
-    })
+    search_nodes.forEach(node => remove_last_clicked_styling(node))
 
     // Add last-clicked class to the target node if it exists in search results
     const target_node = container.querySelector(`[data-instance_path="${target_instance_path}"].search-result`)
     if (target_node) {
-      target_node.classList.add('last-clicked')
+      mode === 'search' ? target_node.classList.add('search-last-clicked') : target_node.classList.add('last-clicked')
       console.log('[SEARCH DEBUG] Added last-clicked to target node:', target_instance_path)
     } else {
       console.warn('[SEARCH DEBUG] Target node not found in search results:', {
         target_instance_path,
         available_search_nodes: Array.from(search_nodes).map(n => n.dataset.instance_path)
       })
+    }
+
+    function remove_last_clicked_styling (node) {
+      const was_last_clicked = node.classList.contains('last-clicked')
+      mode === 'search' ? node.classList.remove('search-last-clicked') : node.classList.remove('last-clicked')
+      if (was_last_clicked) {
+        console.log('[SEARCH DEBUG] Removed last-clicked from:', node.dataset.instance_path)
+      }
     }
   }
 
@@ -1549,6 +1601,9 @@ async function graph_explorer (opts) {
       search_select_node(ev, instance_path)
     } else if (ev.shiftKey) {
       search_select_node(ev, instance_path)
+    } else if (select_between_enabled) {
+      // Handle select-between mode when button is enabled
+      search_select_node(ev, instance_path)
     } else {
       // Regular click
       search_expand_into_default(instance_path)
@@ -1565,18 +1620,55 @@ async function graph_explorer (opts) {
       metaKey: ev.metaKey,
       multi_select_enabled,
       select_between_enabled,
+      select_between_first_node,
       current_selected: selected_instance_paths
     })
 
-    if (ev.shiftKey && !select_between_enabled) {
+    const new_selected = new Set(selected_instance_paths)
+
+    if (select_between_enabled) {
+      if (!select_between_first_node) {
+        select_between_first_node = instance_path
+        console.log('[SEARCH DEBUG] Set first node for select between:', instance_path)
+      } else {
+        console.log('[SEARCH DEBUG] Completing select between range:', {
+          first: select_between_first_node,
+          second: instance_path
+        })
+        const first_index = view.findIndex(n => n.instance_path === select_between_first_node)
+        const second_index = view.findIndex(n => n.instance_path === instance_path)
+
+        if (first_index !== -1 && second_index !== -1) {
+          const start_index = Math.min(first_index, second_index)
+          const end_index = Math.max(first_index, second_index)
+
+          // Toggle selection for all nodes in between
+          for (let i = start_index; i <= end_index; i++) {
+            const node_instance_path = view[i].instance_path
+            if (new_selected.has(node_instance_path)) {
+              new_selected.delete(node_instance_path)
+            } else {
+              new_selected.add(node_instance_path)
+            }
+          }
+        }
+
+        // Reset select between mode after completing the selection
+        select_between_enabled = false
+        select_between_first_node = null
+        update_drive_state({ type: 'mode/select_between_enabled', message: false })
+        render_menubar()
+        console.log('[SEARCH DEBUG] Reset select between mode')
+      }
+    } else if (ev.shiftKey) {
+      // Enable select between mode on shift click
       select_between_enabled = true
       select_between_first_node = instance_path
       update_drive_state({ type: 'mode/select_between_enabled', message: true })
+      render_menubar()
+      console.log('[SEARCH DEBUG] Enabled select between mode with first node:', instance_path)
       return
-    }
-
-    if (multi_select_enabled || ev.ctrlKey || ev.metaKey) {
-      const new_selected = new Set(selected_instance_paths)
+    } else if (multi_select_enabled || ev.ctrlKey || ev.metaKey) {
       if (new_selected.has(instance_path)) {
         console.log('[SEARCH DEBUG] Deselecting node:', instance_path)
         new_selected.delete(instance_path)
@@ -1584,12 +1676,16 @@ async function graph_explorer (opts) {
         console.log('[SEARCH DEBUG] Selecting node:', instance_path)
         new_selected.add(instance_path)
       }
-      update_drive_state({ type: 'runtime/selected_instance_paths', message: [...new_selected] })
     } else {
-      update_drive_state({ type: 'runtime/selected_instance_paths', message: [instance_path] })
+      // Single selection mode
+      new_selected.clear()
+      new_selected.add(instance_path)
+      console.log('[SEARCH DEBUG] Single selecting node:', instance_path)
     }
 
-    console.log('[SEARCH DEBUG] search_select_node completed, new selection:', selected_instance_paths)
+    const new_selection_array = [...new_selected]
+    update_drive_state({ type: 'runtime/selected_instance_paths', message: new_selection_array })
+    console.log('[SEARCH DEBUG] search_select_node completed, new selection:', new_selection_array)
   }
 
   function reset () {
@@ -1668,12 +1764,14 @@ async function graph_explorer (opts) {
   }
 
   function handle_sentinel_intersection (entries) {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        if (entry.target === top_sentinel) fill_viewport_upwards()
-        else if (entry.target === bottom_sentinel) fill_viewport_downwards()
-      }
-    })
+    entries.forEach(entry => fill_downwards_or_upwards(entry))
+  }
+
+  function fill_downwards_or_upwards (entry) {
+    if (entry.isIntersecting) {
+      if (entry.target === top_sentinel) fill_viewport_upwards()
+      else if (entry.target === bottom_sentinel) fill_viewport_downwards()
+    }
   }
 
   function render_next_chunk () {
@@ -1744,9 +1842,7 @@ async function graph_explorer (opts) {
       // Add initially expanded subs if any
       const root_entry = all_entries[root_path]
       if (root_entry && Array.isArray(root_entry.subs)) {
-        root_entry.subs.forEach(sub_path => {
-          add_instances_recursively(sub_path, root_instance_path, instance_states, all_entries)
-        })
+        root_entry.subs.forEach(sub_path => add_instances_recursively(sub_path, root_instance_path, instance_states, all_entries))
       }
     }
   }
@@ -1792,15 +1888,11 @@ async function graph_explorer (opts) {
     const state = get_or_create_state(instance_states, instance_path)
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
-      entry.hubs.forEach(hub_path => {
-        add_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-      })
+      entry.hubs.forEach(hub_path => add_instances_recursively(hub_path, instance_path, instance_states, all_entries))
     }
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
-      entry.subs.forEach(sub_path => {
-        add_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-      })
+      entry.subs.forEach(sub_path => add_instances_recursively(sub_path, instance_path, instance_states, all_entries))
     }
 
     // Add the instance itself
@@ -1815,17 +1907,8 @@ async function graph_explorer (opts) {
 
     const state = get_or_create_state(instance_states, instance_path)
 
-    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
-      entry.hubs.forEach(hub_path => {
-        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-      })
-    }
-
-    if (state.expanded_subs && Array.isArray(entry.subs)) {
-      entry.subs.forEach(sub_path => {
-        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-      })
-    }
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => remove_instances_recursively(hub_path, instance_path, instance_states, all_entries))
+    if (state.expanded_subs && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => remove_instances_recursively(sub_path, instance_path, instance_states, all_entries))
 
     // Remove the instance itself
     remove_instance_from_view_tracking(base_path, instance_path)
@@ -1880,13 +1963,14 @@ async function graph_explorer (opts) {
   function update_last_clicked_styling (new_instance_path) {
     // Remove last-clicked class from all elements
     const all_nodes = shadow.querySelectorAll('.node.last-clicked')
-    all_nodes.forEach(node => node.classList.remove('last-clicked'))
-
+    all_nodes.forEach(node => {
+      mode === 'search' ? node.classList.remove('search-last-clicked') : node.classList.remove('last-clicked')
+    })
     // Add last-clicked class to the new element
     if (new_instance_path) {
       const new_element = shadow.querySelector(`[data-instance_path="${CSS.escape(new_instance_path)}"]`)
       if (new_element) {
-        new_element.classList.add('last-clicked')
+        mode === 'search' ? new_element.classList.add('search-last-clicked') : new_element.classList.add('last-clicked')
       }
     }
   }
@@ -1938,18 +2022,20 @@ async function graph_explorer (opts) {
         // Replace with jump button
         wand_el.textContent = '^'
         wand_el.className = 'wand navigate-to-hub clickable'
-        wand_el.onclick = (event) => {
-          event.stopPropagation()
-          last_clicked_node = instance_path
-          drive_updated_by_match = true
-          update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
-
-          update_last_clicked_styling(instance_path)
-
-          cycle_to_next_duplicate(base_path, instance_path)
-        }
+        wand_el.onclick = (ev) => handle_jump_button_click(ev, instance_path)
       }
       return
+
+      function handle_jump_button_click (ev, instance_path) {
+        ev.stopPropagation()
+        last_clicked_node = instance_path
+        drive_updated_by_match = true
+        update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+
+        update_last_clicked_styling(instance_path)
+
+        cycle_to_next_duplicate(base_path, instance_path)
+      }
     }
 
     const indent_button_div = document.createElement('div')
@@ -1958,8 +2044,16 @@ async function graph_explorer (opts) {
     const navigate_button = document.createElement('span')
     navigate_button.className = 'navigate-to-hub clickable'
     navigate_button.textContent = '^'
-    navigate_button.onclick = (event) => {
-      event.stopPropagation() // Prevent triggering the whole entry click again
+    navigate_button.onclick = (ev) => handle_navigate_button_click(ev, instance_path)
+
+    indent_button_div.appendChild(navigate_button)
+
+    // Remove left padding
+    el.classList.remove('left-indent')
+    el.insertBefore(indent_button_div, el.firstChild)
+
+    function handle_navigate_button_click (ev, instance_path) {
+      ev.stopPropagation() // Prevent triggering the whole entry click again
       // Manually update last clicked node for jump button
       last_clicked_node = instance_path
       drive_updated_by_match = true
@@ -1970,12 +2064,6 @@ async function graph_explorer (opts) {
 
       cycle_to_next_duplicate(base_path, instance_path)
     }
-
-    indent_button_div.appendChild(navigate_button)
-
-    // Remove left padding
-    el.classList.remove('left-indent')
-    el.insertBefore(indent_button_div, el.firstChild)
   }
 
   function scroll_to_and_highlight_instance (target_instance_path, source_instance_path = null) {
