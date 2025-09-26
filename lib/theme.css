@@ -136,6 +136,10 @@
   color: #b48ead;
   font-weight: bold;
 }
+.node.search-last-clicked {
+  color: greenyellow;
+  border-right: 5px solid #7cb342;
+}
 
 /* Base sizes for desktop (768px and above) */
 .node {
