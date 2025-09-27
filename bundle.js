@@ -31,9 +31,12 @@ async function graph_explorer (opts) {
   let previous_mode
   let search_query = ''
   let hubs_flag = 'default' // Flag for hubs behavior: 'default' (prevent duplication), 'true' (no duplication prevention), 'false' (disable hubs)
+  let selection_flag = 'default' // Flag for selection behavior: 'default' (enable selection), 'false' (disable selection)
+  let recursive_collapse_flag = false // Flag for recursive collapse: true (recursive), false (parent level only)
   let drive_updated_by_scroll = false // Flag to prevent `onbatch` from re-rendering on scroll updates.
   let drive_updated_by_toggle = false // Flag to prevent `onbatch` from re-rendering on toggle updates.
   let drive_updated_by_search = false // Flag to prevent `onbatch` from re-rendering on search updates.
+  let drive_updated_by_last_clicked = false // Flag to prevent `onbatch` from re-rendering on last clicked node updates.
   let ignore_drive_updated_by_scroll = false // Prevent scroll flag.
   let drive_updated_by_match = false // Flag to prevent `onbatch` from re-rendering on matching entry updates.
   let drive_updated_by_tracking = false // Flag to prevent `onbatch` from re-rendering on view order tracking updates.
@@ -379,7 +382,9 @@ async function graph_explorer (opts) {
 
   function on_flags ({ data, paths }) {
     const on_flags_paths = {
-      'hubs.json': handle_hubs_flag
+      'hubs.json': handle_hubs_flag,
+      'selection.json': handle_selection_flag,
+      'recursive_collapse.json': handle_recursive_collapse_flag
     }
 
     paths.forEach((path, i) => flags_handler(path, data[i]))
@@ -410,6 +415,16 @@ async function graph_explorer (opts) {
       } else {
         console.warn('hubs flag must be one of: "default", "true", "false", ignoring.', value)
       }
+    }
+
+    function handle_selection_flag (value) {
+      selection_flag = value
+      return { needs_render: true }
+    }
+
+    function handle_recursive_collapse_flag (value) {
+      recursive_collapse_flag = value
+      return { needs_render: false }
     }
   }
 
@@ -772,7 +787,7 @@ async function graph_explorer (opts) {
     // Check if this entry appears elsewhere in the view (any duplicate)
     let has_duplicate_entries = false
     let is_first_occurrence = false
-    if (mode !== 'search' && hubs_flag !== 'true') { // disabled in search mode and when hubs_flag is 'true'
+    if (hubs_flag !== 'true') {
       has_duplicate_entries = has_duplicates(base_path)
 
       // coloring class for duplicates
@@ -794,12 +809,12 @@ async function graph_explorer (opts) {
     `
 
     // For matching entries, disable normal event listener and add handler to whole entry to create button for jump to next duplicate
-    if (has_duplicate_entries && !is_first_occurrence && mode !== 'search' && hubs_flag !== 'true') {
+    if (has_duplicate_entries && !is_first_occurrence && hubs_flag !== 'true') {
       el.onclick = jump_out_to_next_duplicate
     } else {
       const icon_el = el.querySelector('.icon')
       if (icon_el && has_hubs && base_path !== '/') {
-        icon_el.onclick = mode === 'search'
+        icon_el.onclick = (mode === 'search' && search_query)
           ? () => toggle_search_hubs(instance_path)
           : () => toggle_hubs(instance_path)
       }
@@ -809,7 +824,7 @@ async function graph_explorer (opts) {
         const indent_el = el.querySelector('.indent')
         const prefix_el = el.querySelector('.prefix')
 
-        const toggle_subs_handler = mode === 'search'
+        const toggle_subs_handler = (mode === 'search' && search_query)
           ? () => toggle_search_subs(instance_path)
           : () => toggle_subs(instance_path)
 
@@ -819,10 +834,21 @@ async function graph_explorer (opts) {
 
       // Special handling for first duplicate entry - it should have normal select behavior but also show jump button
       const name_el = el.querySelector('.name')
-      if (has_duplicate_entries && is_first_occurrence && mode !== 'search' && hubs_flag !== 'true') {
-        name_el.onclick = ev => jump_and_select_matching_entry(ev, instance_path)
+      if (selection_flag !== false) {
+        if (has_duplicate_entries && is_first_occurrence && hubs_flag !== 'true') {
+          name_el.onclick = ev => jump_and_select_matching_entry(ev, instance_path)
+        } else {
+          name_el.onclick = ev => mode === 'search' ? handle_search_name_click(ev, instance_path) : select_node(ev, instance_path)
+        }
       } else {
-        name_el.onclick = ev => mode === 'search' ? handle_search_name_click(ev, instance_path) : select_node(ev, instance_path)
+        name_el.onclick = () => handle_last_clicked_node(instance_path)
+      }
+
+      function handle_last_clicked_node (instance_path) {
+        last_clicked_node = instance_path
+        drive_updated_by_last_clicked = true
+        update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+        update_last_clicked_styling(instance_path)
       }
     }
 
@@ -830,7 +856,11 @@ async function graph_explorer (opts) {
 
     return el
     function jump_and_select_matching_entry (ev, instance_path) {
-      select_node(ev, instance_path)
+      if (mode === 'search') {
+        handle_search_name_click(ev, instance_path)
+      } else {
+        select_node(ev, instance_path)
+      }
       // Also add jump button functionality for first occurrence
       setTimeout(() => {
         add_jump_button_to_matching_entry(el, base_path, instance_path)
@@ -838,13 +868,14 @@ async function graph_explorer (opts) {
     }
     function jump_out_to_next_duplicate () {
       // Manually update last clicked
-      last_clicked_node = instance_path
-      drive_updated_by_match = true
-
-      update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
-
-      // Manually update DOM
-      update_last_clicked_styling(instance_path)
+      if (mode === 'search') {
+        handle_search_node_click(instance_path)
+      } else {
+        last_clicked_node = instance_path
+        drive_updated_by_match = true
+        update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+        update_last_clicked_styling(instance_path)
+      }
       add_jump_button_to_matching_entry(el, base_path, instance_path)
     }
   }
@@ -1056,6 +1087,7 @@ async function graph_explorer (opts) {
     })
     const original_view_paths = original_view.map(n => n.instance_path)
     search_state_instances = {}
+    const search_tracking = {}
     const search_view = build_search_view_recursive({
       query,
       base_path: '/',
@@ -1068,7 +1100,9 @@ async function graph_explorer (opts) {
       parent_pipe_trail: [],
       instance_states: search_state_instances,
       all_entries,
-      original_view_paths
+      original_view_paths,
+      is_expanded_child: false,
+      search_tracking
     })
 
     console.log('[SEARCH DEBUG] Search view built:', search_view.length)
@@ -1088,13 +1122,19 @@ async function graph_explorer (opts) {
     instance_states,
     all_entries,
     original_view_paths,
-    is_expanded_child = false
+    is_expanded_child = false,
+    search_tracking = {}
   }) {
     const entry = all_entries[base_path]
     if (!entry) return []
 
     const instance_path = `${parent_instance_path}|${base_path}`
     const is_direct_match = entry.name && entry.name.toLowerCase().includes(query.toLowerCase())
+
+    // track instance for duplicate detection
+    if (!search_tracking[base_path]) search_tracking[base_path] = []
+    const is_first_occurrence_in_search = !search_tracking[base_path].length
+    search_tracking[base_path].push(instance_path)
 
     // Use extracted pipe logic for consistent rendering
     const { children_pipe_trail, is_hub_on_top } = calculate_children_pipe_trail({
@@ -1128,7 +1168,8 @@ async function graph_explorer (opts) {
         instance_states,
         all_entries,
         original_view_paths,
-        is_expanded_child: true
+        is_expanded_child: true,
+        search_tracking
       })
     })
 
@@ -1150,11 +1191,12 @@ async function graph_explorer (opts) {
           instance_states,
           all_entries,
           original_view_paths,
-          is_expanded_child: true
+          is_expanded_child: true,
+          search_tracking
         })
       })
-    } else if (!is_expanded_child) {
-      // Only search through subs if this node itself isn't an expanded child
+    } else if (!is_expanded_child && is_first_occurrence_in_search) {
+      // Only search through subs for the first occurrence of this base_path
       sub_results = (entry.subs || []).flatMap((sub_path, i, arr) =>
         build_search_view_recursive({
           query,
@@ -1168,7 +1210,9 @@ async function graph_explorer (opts) {
           parent_pipe_trail: children_pipe_trail,
           instance_states,
           all_entries,
-          original_view_paths
+          original_view_paths,
+          is_expanded_child: false,
+          search_tracking
         })
       )
     }
@@ -1176,10 +1220,11 @@ async function graph_explorer (opts) {
     const has_matching_descendant = sub_results.length > 0
 
     // If this is an expanded child, always include it regardless of search match
+    // only include if it's the first occurrence OR if a dirct match
     if (!is_expanded_child && !is_direct_match && !has_matching_descendant) return []
+    if (!is_expanded_child && !is_first_occurrence_in_search && !is_direct_match) return []
 
-    // Set instance states for rendering
-    const final_expand_subs = search_state ? search_state.expanded_subs : has_matching_descendant
+    const final_expand_subs = search_state ? search_state.expanded_subs : (has_matching_descendant && is_first_occurrence_in_search)
     const final_expand_hubs = search_state ? search_state.expanded_hubs : false
 
     instance_states[instance_path] = { expanded_subs: final_expand_subs, expanded_hubs: final_expand_hubs }
@@ -1210,9 +1255,24 @@ async function graph_explorer (opts) {
       no_results_el.textContent = `No results for "${query}"`
       return container.replaceChildren(no_results_el)
     }
+
+    // temporary tracking map for search results to detect duplicates
+    const search_tracking = {}
+    search_view.forEach(node => {
+      const { base_path, instance_path } = node
+      if (!search_tracking[base_path]) search_tracking[base_path] = []
+      search_tracking[base_path].push(instance_path)
+    })
+
+    const original_tracking = view_order_tracking
+    view_order_tracking = search_tracking
+    collect_all_duplicate_entries()
+
     const fragment = document.createDocumentFragment()
     search_view.forEach(node_data => fragment.appendChild(create_node({ ...node_data, query })))
     container.replaceChildren(fragment)
+
+    view_order_tracking = original_tracking
   }
 
   /******************************************************************************
@@ -1403,7 +1463,19 @@ async function graph_explorer (opts) {
     // Update view order tracking for the toggled subs
     const base_path = instance_path.split('|').pop()
     const entry = all_entries[base_path]
-    if (entry && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => add_or_remove_subs_instance_recursively(sub_path, instance_path, instance_states, all_entries))
+
+    if (entry && Array.isArray(entry.subs)) {
+      if (was_expanded && recursive_collapse_flag === true) {
+        // collapse all sub descendants
+        entry.subs.forEach(sub_path => {
+          collapse_subs_recursively(sub_path, instance_path, instance_states, all_entries)
+          remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+        })
+      } else {
+        // only toggle direct subs
+        entry.subs.forEach(sub_path => toggle_subs_instance(sub_path, instance_path, instance_states, all_entries))
+      }
+    }
 
     last_clicked_node = instance_path
     update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
@@ -1413,7 +1485,7 @@ async function graph_explorer (opts) {
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
 
-    function add_or_remove_subs_instance_recursively (sub_path, instance_path, instance_states, all_entries) {
+    function toggle_subs_instance (sub_path, instance_path, instance_states, all_entries) {
       if (was_expanded) {
         // Collapsing so
         remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
@@ -1433,7 +1505,19 @@ async function graph_explorer (opts) {
     // Update view order tracking for the toggled hubs
     const base_path = instance_path.split('|').pop()
     const entry = all_entries[base_path]
-    if (entry && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => add_or_remove_hubs_instance_recursively(hub_path, instance_path, instance_states, all_entries))
+
+    if (entry && Array.isArray(entry.hubs)) {
+      if (was_expanded && recursive_collapse_flag === true) {
+        // collapse all hub descendants
+        entry.hubs.forEach(hub_path => {
+          collapse_hubs_recursively(hub_path, instance_path, instance_states, all_entries)
+          remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+        })
+      } else {
+        // only toggle direct hubs
+        entry.hubs.forEach(hub_path => toggle_hubs_instance(hub_path, instance_path, instance_states, all_entries))
+      }
+    }
 
     last_clicked_node = instance_path
     drive_updated_by_scroll = true // Prevent onbatch interference with hub spacer
@@ -1443,7 +1527,7 @@ async function graph_explorer (opts) {
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
 
-    function add_or_remove_hubs_instance_recursively (hub_path, instance_path, instance_states, all_entries) {
+    function toggle_hubs_instance (hub_path, instance_path, instance_states, all_entries) {
       if (was_expanded) {
         // Collapsing so
         remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
@@ -1459,19 +1543,32 @@ async function graph_explorer (opts) {
       instance_path,
       mode,
       search_query,
-      current_state: search_entry_states[instance_path]?.expanded_subs || false
+      current_state: search_entry_states[instance_path]?.expanded_subs || false,
+      recursive_collapse_flag
     })
 
     const state = get_or_create_state(search_entry_states, instance_path)
     const old_expanded = state.expanded_subs
     state.expanded_subs = !state.expanded_subs
+
+    if (old_expanded && recursive_collapse_flag === true) {
+      const base_path = instance_path.split('|').pop()
+      const entry = all_entries[base_path]
+      if (entry && Array.isArray(entry.subs)) {
+        entry.subs.forEach(sub_path => {
+          collapse_search_subs_recursively(sub_path, instance_path, search_entry_states, all_entries)
+        })
+      }
+    }
+
     const has_matching_descendant = search_state_instances[instance_path]?.expanded_subs ? null : true
     const has_matching_parents = manipulated_inside_search[instance_path] ? search_entry_states[instance_path]?.expanded_hubs : search_state_instances[instance_path]?.expanded_hubs
     manipulated_inside_search[instance_path] = { expanded_hubs: has_matching_parents, expanded_subs: has_matching_descendant }
     console.log('[SEARCH DEBUG] Toggled subs state:', {
       instance_path,
       old_expanded,
-      new_expanded: state.expanded_subs
+      new_expanded: state.expanded_subs,
+      recursive_state: old_expanded && recursive_collapse_flag === true
     })
 
     handle_search_node_click(instance_path)
@@ -1486,18 +1583,31 @@ async function graph_explorer (opts) {
       instance_path,
       mode,
       search_query,
-      current_state: search_entry_states[instance_path]?.expanded_hubs || false
+      current_state: search_entry_states[instance_path]?.expanded_hubs || false,
+      recursive_collapse_flag
     })
 
     const state = get_or_create_state(search_entry_states, instance_path)
     const old_expanded = state.expanded_hubs
     state.expanded_hubs = !state.expanded_hubs
+
+    if (old_expanded && recursive_collapse_flag === true) {
+      const base_path = instance_path.split('|').pop()
+      const entry = all_entries[base_path]
+      if (entry && Array.isArray(entry.hubs)) {
+        entry.hubs.forEach(hub_path => {
+          collapse_search_hubs_recursively(hub_path, instance_path, search_entry_states, all_entries)
+        })
+      }
+    }
+
     const has_matching_descendant = search_state_instances[instance_path]?.expanded_subs
     manipulated_inside_search[instance_path] = { expanded_hubs: state.expanded_hubs, expanded_subs: has_matching_descendant }
     console.log('[SEARCH DEBUG] Toggled hubs state:', {
       instance_path,
       old_expanded,
-      new_expanded: state.expanded_hubs
+      new_expanded: state.expanded_hubs,
+      recursive_state: old_expanded && recursive_collapse_flag === true
     })
 
     handle_search_node_click(instance_path)
@@ -1914,6 +2024,153 @@ async function graph_explorer (opts) {
     remove_instance_from_view_tracking(base_path, instance_path)
   }
 
+  // Recursively hubs all subs in default mode
+  function collapse_subs_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(instance_states, instance_path)
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      state.expanded_subs = false
+      entry.subs.forEach(sub_path => {
+        collapse_all_recursively(sub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+      })
+    }
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      state.expanded_hubs = false
+      hub_num = Math.max(0, hub_num - 1) // Decrement hub counter
+      entry.hubs.forEach(hub_path => {
+        collapse_all_recursively(hub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      })
+    }
+  }
+
+  // Recursively hubs all hubs in default mode
+  function collapse_hubs_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(instance_states, instance_path)
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      state.expanded_hubs = false
+      hub_num = Math.max(0, hub_num - 1)
+      entry.hubs.forEach(hub_path => {
+        collapse_all_recursively(hub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      })
+    }
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      state.expanded_subs = false
+      entry.subs.forEach(sub_path => {
+        collapse_all_recursively(sub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+      })
+    }
+  }
+
+  // Recursively collapse in default mode
+  function collapse_all_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(instance_states, instance_path)
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      state.expanded_subs = false
+      entry.subs.forEach(sub_path => {
+        collapse_all_recursively(sub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+      })
+    }
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      state.expanded_hubs = false
+      hub_num = Math.max(0, hub_num - 1)
+      entry.hubs.forEach(hub_path => {
+        collapse_all_recursively(hub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      })
+    }
+  }
+
+  // Recursively subs all hubs in search mode
+  function collapse_search_subs_recursively (base_path, parent_instance_path, search_entry_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(search_entry_states, instance_path)
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      state.expanded_subs = false
+      entry.subs.forEach(sub_path => {
+        collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries)
+      })
+    }
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      state.expanded_hubs = false
+      entry.hubs.forEach(hub_path => {
+        collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries)
+      })
+    }
+  }
+
+  // Recursively hubs all hubs in search mode
+  function collapse_search_hubs_recursively (base_path, parent_instance_path, search_entry_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(search_entry_states, instance_path)
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      state.expanded_hubs = false
+      entry.hubs.forEach(hub_path => {
+        collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries)
+      })
+    }
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      state.expanded_subs = false
+      entry.subs.forEach(sub_path => {
+        collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries)
+      })
+    }
+  }
+
+  // Recursively collapse in search mode
+  function collapse_search_all_recursively (base_path, parent_instance_path, search_entry_states, all_entries) {
+    const instance_path = `${parent_instance_path}|${base_path}`
+    const entry = all_entries[base_path]
+    if (!entry) return
+
+    const state = get_or_create_state(search_entry_states, instance_path)
+
+    if (state.expanded_subs && Array.isArray(entry.subs)) {
+      state.expanded_subs = false
+      entry.subs.forEach(sub_path => {
+        collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries)
+      })
+    }
+
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) {
+      state.expanded_hubs = false
+      entry.hubs.forEach(hub_path => {
+        collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries)
+      })
+    }
+  }
+
   function get_next_duplicate_instance (base_path, current_instance_path) {
     const duplicates = duplicate_entries_map[base_path]
     if (!duplicates || duplicates.instances.length <= 1) return null
@@ -1962,7 +2219,8 @@ async function graph_explorer (opts) {
 
   function update_last_clicked_styling (new_instance_path) {
     // Remove last-clicked class from all elements
-    const all_nodes = shadow.querySelectorAll('.node.last-clicked')
+    const all_nodes = mode === 'search' ? shadow.querySelectorAll('.node.search-last-clicked') : shadow.querySelectorAll('.node.last-clicked')
+    console.log('Removing last-clicked class from all nodes', all_nodes)
     all_nodes.forEach(node => {
       mode === 'search' ? node.classList.remove('search-last-clicked') : node.classList.remove('last-clicked')
     })
@@ -2129,6 +2387,10 @@ async function graph_explorer (opts) {
       drive_updated_by_tracking = false
       return true
     }
+    if (drive_updated_by_last_clicked) {
+      drive_updated_by_last_clicked = false
+      return true
+    }
     console.log('[SEARCH DEBUG] No feedback flags set, allowing onbatch')
     return false
   }
@@ -2210,18 +2472,18 @@ async function graph_explorer (opts) {
     const el = document.createElement('div')
     el.className = 'node type-root'
     el.dataset.instance_path = instance_path
-    const prefix_class = has_subs || mode === 'search' ? 'prefix clickable' : 'prefix'
+    const prefix_class = has_subs || (mode === 'search' && search_query) ? 'prefix clickable' : 'prefix'
     const prefix_name = state.expanded_subs ? 'tee-down' : 'line-h'
-    el.innerHTML = `<div class="wand clickable">🪄</div><span class="${prefix_class} ${prefix_name}"></span><span class="name ${mode === 'search' ? '' : 'clickable'}">/🌐</span>`
+    el.innerHTML = `<div class="wand clickable">🪄</div><span class="${prefix_class} ${prefix_name}"></span><span class="name ${(mode === 'search' && search_query) ? '' : 'clickable'}">/🌐</span>`
 
     el.querySelector('.wand').onclick = reset
     if (has_subs) {
       const prefix_el = el.querySelector('.prefix')
       if (prefix_el) {
-        prefix_el.onclick = mode === 'search' ? null : () => toggle_subs(instance_path)
+        prefix_el.onclick = (mode === 'search' && search_query) ? null : () => toggle_subs(instance_path)
       }
     }
-    el.querySelector('.name').onclick = ev => mode === 'search' ? null : select_node(ev, instance_path)
+    el.querySelector('.name').onclick = ev => (mode === 'search' && search_query) ? null : select_node(ev, instance_path)
     return el
   }
 
@@ -2294,7 +2556,9 @@ function fallback_module () {
           'select_between_enabled.json': { raw: 'false' }
         },
         'flags/': {
-          'hubs.json': { raw: '"default"' }
+          'hubs.json': { raw: '"default"' },
+          'selection.json': { raw: 'true' },
+          'recursive_collapse.json': { raw: 'true' }
         }
       }
     }
