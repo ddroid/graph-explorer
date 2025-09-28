@@ -82,7 +82,8 @@ function fallback_module () {
           entries: 'entries',
           runtime: 'runtime',
           mode: 'mode',
-          flags: 'flags'
+          flags: 'flags',
+          keybinds: 'keybinds'
         }
       }
     },
@@ -92,7 +93,8 @@ function fallback_module () {
       'entries/': {},
       'runtime/': {},
       'mode/': {},
-      'flags/': {}
+      'flags/': {},
+      'keybinds/': {}
     }
   }
 }
