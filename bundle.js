@@ -53,6 +53,7 @@ async function graph_explorer (opts) {
   let last_clicked_node = null // Track the last clicked node instance path for highlighting.
   let root_wand_state = null // Store original root wand state when replaced with jump button
   const manipulated_inside_search = {}
+  let keybinds = {} // Store keyboard navigation bindings
 
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
@@ -92,10 +93,13 @@ async function graph_explorer (opts) {
     style: inject_style,
     runtime: on_runtime,
     mode: on_mode,
-    flags: on_flags
+    flags: on_flags,
+    keybinds: on_keybinds
   }
   // Start watching for state changes. This is the main trigger for all updates.
   await sdb.watch(onbatch)
+
+  document.onkeydown = handle_keyboard_navigation
 
   return el
 
@@ -432,6 +436,19 @@ async function graph_explorer (opts) {
     const sheet = new CSSStyleSheet()
     sheet.replaceSync(data[0])
     shadow.adoptedStyleSheets = [sheet]
+  }
+
+  function on_keybinds ({ data }) {
+    if (!data || data[0] == null) {
+      console.error('Keybinds data is missing or empty.')
+      return
+    }
+    const parsed_data = parse_json_data(data[0])
+    if (typeof parsed_data !== 'object' || !parsed_data) {
+      console.error('Parsed keybinds data is not a valid object.')
+      return
+    }
+    keybinds = parsed_data
   }
 
   // Helper to persist component state to the drive.
@@ -867,15 +884,10 @@ async function graph_explorer (opts) {
       }, 10)
     }
     function jump_out_to_next_duplicate () {
-      // Manually update last clicked
-      if (mode === 'search') {
-        handle_search_node_click(instance_path)
-      } else {
-        last_clicked_node = instance_path
-        drive_updated_by_match = true
-        update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
-        update_last_clicked_styling(instance_path)
-      }
+      last_clicked_node = instance_path
+      drive_updated_by_match = true
+      update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+      update_last_clicked_styling(instance_path)
       add_jump_button_to_matching_entry(el, base_path, instance_path)
     }
   }
@@ -951,20 +963,31 @@ async function graph_explorer (opts) {
   5. MENUBAR AND SEARCH
 ******************************************************************************/
   function render_menubar () {
-    const search_button = Object.assign(document.createElement('button'), {
-      textContent: 'Search',
-      onclick: toggle_search_mode
-    })
+    const search_button = document.createElement('button')
+    search_button.textContent = 'Search'
+    search_button.onclick = toggle_search_mode
 
     const multi_select_button = document.createElement('button')
-    multi_select_button.innerHTML = `Multi Select: ${multi_select_enabled ? 'true' : 'false'}`
+    multi_select_button.textContent = `Multi Select: ${multi_select_enabled}`
     multi_select_button.onclick = toggle_multi_select
 
     const select_between_button = document.createElement('button')
-    select_between_button.innerHTML = `Select Between: ${select_between_enabled ? 'true' : 'false'}`
+    select_between_button.textContent = `Select Between: ${select_between_enabled}`
     select_between_button.onclick = toggle_select_between
 
-    menubar.replaceChildren(search_button, multi_select_button, select_between_button)
+    const hubs_button = document.createElement('button')
+    hubs_button.textContent = `Hubs: ${hubs_flag}`
+    hubs_button.onclick = toggle_hubs_flag
+
+    const selection_button = document.createElement('button')
+    selection_button.textContent = `Selection: ${selection_flag}`
+    selection_button.onclick = toggle_selection_flag
+
+    const recursive_collapse_button = document.createElement('button')
+    recursive_collapse_button.textContent = `Recursive Collapse: ${recursive_collapse_flag}`
+    recursive_collapse_button.onclick = toggle_recursive_collapse_flag
+
+    menubar.replaceChildren(search_button, multi_select_button, select_between_button, hubs_button, selection_button, recursive_collapse_button)
   }
 
   function render_searchbar () {
@@ -1042,6 +1065,27 @@ async function graph_explorer (opts) {
     }
     update_drive_state({ type: 'mode/select_between_enabled', message: select_between_enabled })
     render_menubar() // Re-render to update button text
+  }
+
+  function toggle_hubs_flag () {
+    const values = ['default', 'true', 'false']
+    const current_index = values.indexOf(hubs_flag)
+    const next_index = (current_index + 1) % values.length
+    hubs_flag = values[next_index]
+    update_drive_state({ type: 'flags/hubs', message: hubs_flag })
+    render_menubar()
+  }
+
+  function toggle_selection_flag () {
+    selection_flag = !selection_flag
+    update_drive_state({ type: 'flags/selection', message: selection_flag })
+    render_menubar()
+  }
+
+  function toggle_recursive_collapse_flag () {
+    recursive_collapse_flag = !recursive_collapse_flag
+    update_drive_state({ type: 'flags/recursive_collapse', message: recursive_collapse_flag })
+    render_menubar()
   }
 
   function on_search_input (event) {
@@ -2513,6 +2557,149 @@ async function graph_explorer (opts) {
       else break
     }
   }
+
+  /******************************************************************************
+  9. KEYBOARD NAVIGATION
+    - Handles keyboard-based navigation for the graph explorer
+    - Navigate up/down around last_clicked node
+  ******************************************************************************/
+  function handle_keyboard_navigation (event) {
+    // Don't handle keyboard events if focus is on input elements
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+      return
+    }
+
+    let key_combination = ''
+    if (event.ctrlKey) key_combination += 'Control+'
+    if (event.altKey) key_combination += 'Alt+'
+    if (event.shiftKey) key_combination += 'Shift+'
+    key_combination += event.key
+
+    const action = keybinds[key_combination] || keybinds[event.key]
+    if (!action) return
+
+    // Prevent default behavior for handled keys
+    event.preventDefault()
+
+    // Execute the appropriate action
+    switch (action) {
+    case 'navigate_up':
+      navigate_to_adjacent_node(-1)
+      break
+    case 'navigate_down':
+      navigate_to_adjacent_node(1)
+      break
+    case 'toggle_subs':
+      toggle_subs_for_current_node()
+      break
+    case 'toggle_hubs':
+      toggle_hubs_for_current_node()
+      break
+    case 'multiselect':
+      multiselect_current_node()
+      break
+    case 'select_between':
+      select_between_current_node()
+      break
+    }
+  }
+
+  function navigate_to_adjacent_node (direction) {
+    if (view.length === 0) return
+    if (!last_clicked_node) last_clicked_node = view[0].instance_path
+    const current_index = view.findIndex(node => node.instance_path === last_clicked_node)
+    if (current_index === -1) return
+
+    const new_index = current_index + direction
+    if (new_index < 0 || new_index >= view.length) return
+
+    const new_node = view[new_index]
+    last_clicked_node = new_node.instance_path
+    drive_updated_by_last_clicked = true
+    update_drive_state({ type: 'runtime/last_clicked_node', message: last_clicked_node })
+
+    // Update visual styling
+    if (mode === 'search' && search_query) {
+      update_search_last_clicked_styling(last_clicked_node)
+    } else {
+      update_last_clicked_styling(last_clicked_node)
+    }
+
+    scroll_to_node(new_node.instance_path)
+  }
+
+  function toggle_subs_for_current_node () {
+    if (!last_clicked_node) return
+
+    if (mode === 'search' && search_query) {
+      toggle_search_subs(last_clicked_node)
+    } else {
+      toggle_subs(last_clicked_node)
+    }
+  }
+
+  function toggle_hubs_for_current_node () {
+    if (!last_clicked_node) return
+
+    if (mode === 'search' && search_query) {
+      toggle_search_hubs(last_clicked_node)
+    } else {
+      toggle_hubs(last_clicked_node)
+    }
+  }
+
+  function multiselect_current_node () {
+    if (!last_clicked_node || selection_flag === false) return
+
+    // IMPORTANT FIX!!!!! : synthetic event object for compatibility with existing functions
+    const synthetic_event = { ctrlKey: true, metaKey: false, shiftKey: false }
+
+    if (mode === 'search' && search_query) {
+      search_select_node(synthetic_event, last_clicked_node)
+    } else {
+      select_node(synthetic_event, last_clicked_node)
+    }
+  }
+
+  function select_between_current_node () {
+    if (!last_clicked_node || selection_flag === false) return
+
+    if (!select_between_enabled) {
+      // Enable select between mode and set first node
+      select_between_enabled = true
+      select_between_first_node = last_clicked_node
+      update_drive_state({ type: 'mode/select_between_enabled', message: true })
+      render_menubar()
+    } else {
+      // Complete the select between operation
+      const synthetic_event = { ctrlKey: false, metaKey: false, shiftKey: true }
+
+      if (mode === 'search' && search_query) {
+        search_select_node(synthetic_event, last_clicked_node)
+      } else {
+        select_node(synthetic_event, last_clicked_node)
+      }
+    }
+  }
+
+  function scroll_to_node (instance_path) {
+    const node_index = view.findIndex(node => node.instance_path === instance_path)
+    if (node_index === -1 || !node_height) return
+
+    const target_scroll_top = node_index * node_height
+    const container_height = container.clientHeight
+    const current_scroll_top = container.scrollTop
+
+    // Only scroll if the node is not fully visible
+    if (target_scroll_top < current_scroll_top || target_scroll_top + node_height > current_scroll_top + container_height) {
+      const centered_scroll_top = target_scroll_top - (container_height / 2) + (node_height / 2)
+      container.scrollTop = Math.max(0, centered_scroll_top)
+
+      vertical_scroll_value = container.scrollTop
+      drive_updated_by_scroll = true
+      update_drive_state({ type: 'runtime/vertical_scroll_value', message: vertical_scroll_value })
+    }
+  }
 }
 
 /******************************************************************************
@@ -2559,6 +2746,18 @@ function fallback_module () {
           'hubs.json': { raw: '"default"' },
           'selection.json': { raw: 'true' },
           'recursive_collapse.json': { raw: 'true' }
+        },
+        'keybinds/': {
+          'navigation.json': {
+            raw: JSON.stringify({
+              ArrowUp: 'navigate_up',
+              ArrowDown: 'navigate_down',
+              'Control+ArrowDown': 'toggle_subs',
+              'Control+ArrowUp': 'toggle_hubs',
+              'Alt+s': 'multiselect',
+              'Alt+b': 'select_between'
+            })
+          }
         }
       }
     }
@@ -2675,7 +2874,8 @@ function fallback_module () {
           entries: 'entries',
           runtime: 'runtime',
           mode: 'mode',
-          flags: 'flags'
+          flags: 'flags',
+          keybinds: 'keybinds'
         }
       }
     },
@@ -2685,7 +2885,8 @@ function fallback_module () {
       'entries/': {},
       'runtime/': {},
       'mode/': {},
-      'flags/': {}
+      'flags/': {},
+      'keybinds/': {}
     }
   }
 }
