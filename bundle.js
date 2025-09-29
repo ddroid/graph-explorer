@@ -879,9 +879,7 @@ async function graph_explorer (opts) {
         select_node(ev, instance_path)
       }
       // Also add jump button functionality for first occurrence
-      setTimeout(() => {
-        add_jump_button_to_matching_entry(el, base_path, instance_path)
-      }, 10)
+      setTimeout(() => add_jump_button_to_matching_entry(el, base_path, instance_path), 10)
     }
     function jump_out_to_next_duplicate () {
       last_clicked_node = instance_path
@@ -1302,11 +1300,7 @@ async function graph_explorer (opts) {
 
     // temporary tracking map for search results to detect duplicates
     const search_tracking = {}
-    search_view.forEach(node => {
-      const { base_path, instance_path } = node
-      if (!search_tracking[base_path]) search_tracking[base_path] = []
-      search_tracking[base_path].push(instance_path)
-    })
+    search_view.forEach(node => set_search_tracking(node))
 
     const original_tracking = view_order_tracking
     view_order_tracking = search_tracking
@@ -1317,6 +1311,12 @@ async function graph_explorer (opts) {
     container.replaceChildren(fragment)
 
     view_order_tracking = original_tracking
+
+    function set_search_tracking (node) {
+      const { base_path, instance_path } = node
+      if (!search_tracking[base_path]) search_tracking[base_path] = []
+      search_tracking[base_path].push(instance_path)
+    }
   }
 
   /******************************************************************************
@@ -1509,16 +1509,8 @@ async function graph_explorer (opts) {
     const entry = all_entries[base_path]
 
     if (entry && Array.isArray(entry.subs)) {
-      if (was_expanded && recursive_collapse_flag === true) {
-        // collapse all sub descendants
-        entry.subs.forEach(sub_path => {
-          collapse_subs_recursively(sub_path, instance_path, instance_states, all_entries)
-          remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-        })
-      } else {
-        // only toggle direct subs
-        entry.subs.forEach(sub_path => toggle_subs_instance(sub_path, instance_path, instance_states, all_entries))
-      }
+      if (was_expanded && recursive_collapse_flag === true) entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, all_entries))
+      else entry.subs.forEach(sub_path => toggle_subs_instance(sub_path, instance_path, instance_states, all_entries))
     }
 
     last_clicked_node = instance_path
@@ -1538,6 +1530,11 @@ async function graph_explorer (opts) {
         add_instances_recursively(sub_path, instance_path, instance_states, all_entries)
       }
     }
+
+    function collapse_and_remove_instance (sub_path, instance_path, instance_states, all_entries) {
+      collapse_subs_recursively(sub_path, instance_path, instance_states, all_entries)
+      remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+    }
   }
 
   function toggle_hubs (instance_path) {
@@ -1553,13 +1550,15 @@ async function graph_explorer (opts) {
     if (entry && Array.isArray(entry.hubs)) {
       if (was_expanded && recursive_collapse_flag === true) {
         // collapse all hub descendants
-        entry.hubs.forEach(hub_path => {
-          collapse_hubs_recursively(hub_path, instance_path, instance_states, all_entries)
-          remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-        })
+        entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, all_entries))
       } else {
         // only toggle direct hubs
         entry.hubs.forEach(hub_path => toggle_hubs_instance(hub_path, instance_path, instance_states, all_entries))
+      }
+
+      function collapse_and_remove_instance (hub_path, instance_path, instance_states, all_entries) {
+        collapse_hubs_recursively(hub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
       }
     }
 
@@ -1598,11 +1597,7 @@ async function graph_explorer (opts) {
     if (old_expanded && recursive_collapse_flag === true) {
       const base_path = instance_path.split('|').pop()
       const entry = all_entries[base_path]
-      if (entry && Array.isArray(entry.subs)) {
-        entry.subs.forEach(sub_path => {
-          collapse_search_subs_recursively(sub_path, instance_path, search_entry_states, all_entries)
-        })
-      }
+      if (entry && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => collapse_search_subs_recursively(sub_path, instance_path, search_entry_states, all_entries))
     }
 
     const has_matching_descendant = search_state_instances[instance_path]?.expanded_subs ? null : true
@@ -1638,11 +1633,7 @@ async function graph_explorer (opts) {
     if (old_expanded && recursive_collapse_flag === true) {
       const base_path = instance_path.split('|').pop()
       const entry = all_entries[base_path]
-      if (entry && Array.isArray(entry.hubs)) {
-        entry.hubs.forEach(hub_path => {
-          collapse_search_hubs_recursively(hub_path, instance_path, search_entry_states, all_entries)
-        })
-      }
+      if (entry && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => collapse_search_hubs_recursively(hub_path, instance_path, search_entry_states, all_entries))
     }
 
     const has_matching_descendant = search_state_instances[instance_path]?.expanded_subs
@@ -2078,19 +2069,17 @@ async function graph_explorer (opts) {
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => {
-        collapse_all_recursively(sub_path, instance_path, instance_states, all_entries)
-        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-      })
+      entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, all_entries))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
       hub_num = Math.max(0, hub_num - 1) // Decrement hub counter
-      entry.hubs.forEach(hub_path => {
-        collapse_all_recursively(hub_path, instance_path, instance_states, all_entries)
-        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-      })
+      entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, all_entries))
+    }
+    function collapse_and_remove_instance (base_path, instance_path, instance_states, all_entries) {
+      collapse_subs_recursively(base_path, instance_path, instance_states, all_entries)
+      remove_instances_recursively(base_path, instance_path, instance_states, all_entries)
     }
   }
 
@@ -2105,18 +2094,16 @@ async function graph_explorer (opts) {
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
       hub_num = Math.max(0, hub_num - 1)
-      entry.hubs.forEach(hub_path => {
-        collapse_all_recursively(hub_path, instance_path, instance_states, all_entries)
-        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-      })
+      entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, all_entries))
     }
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => {
-        collapse_all_recursively(sub_path, instance_path, instance_states, all_entries)
-        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-      })
+      entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, all_entries))
+    }
+    function collapse_and_remove_instance (base_path, instance_path, instance_states, all_entries) {
+      collapse_all_recursively(base_path, instance_path, instance_states, all_entries)
+      remove_instances_recursively(base_path, instance_path, instance_states, all_entries)
     }
   }
 
@@ -2130,19 +2117,18 @@ async function graph_explorer (opts) {
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => {
-        collapse_all_recursively(sub_path, instance_path, instance_states, all_entries)
-        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
-      })
+      entry.subs.forEach(sub_path => collapse_and_remove_instance_recursively(sub_path, instance_path, instance_states, all_entries))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
       hub_num = Math.max(0, hub_num - 1)
-      entry.hubs.forEach(hub_path => {
-        collapse_all_recursively(hub_path, instance_path, instance_states, all_entries)
-        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
-      })
+      entry.hubs.forEach(hub_path => collapse_and_remove_instance_recursively(hub_path, instance_path, instance_states, all_entries))
+    }
+
+    function collapse_and_remove_instance_recursively (base_path, instance_path, instance_states, all_entries) {
+      collapse_all_recursively(base_path, instance_path, instance_states, all_entries)
+      remove_instances_recursively(base_path, instance_path, instance_states, all_entries)
     }
   }
 
@@ -2156,16 +2142,12 @@ async function graph_explorer (opts) {
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => {
-        collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries)
-      })
+      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
-      entry.hubs.forEach(hub_path => {
-        collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries)
-      })
+      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries))
     }
   }
 
@@ -2179,16 +2161,12 @@ async function graph_explorer (opts) {
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
-      entry.hubs.forEach(hub_path => {
-        collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries)
-      })
+      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries))
     }
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => {
-        collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries)
-      })
+      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries))
     }
   }
 
@@ -2202,16 +2180,12 @@ async function graph_explorer (opts) {
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => {
-        collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries)
-      })
+      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
-      entry.hubs.forEach(hub_path => {
-        collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries)
-      })
+      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries))
     }
   }
 
@@ -2265,9 +2239,7 @@ async function graph_explorer (opts) {
     // Remove last-clicked class from all elements
     const all_nodes = mode === 'search' ? shadow.querySelectorAll('.node.search-last-clicked') : shadow.querySelectorAll('.node.last-clicked')
     console.log('Removing last-clicked class from all nodes', all_nodes)
-    all_nodes.forEach(node => {
-      mode === 'search' ? node.classList.remove('search-last-clicked') : node.classList.remove('last-clicked')
-    })
+    all_nodes.forEach(node => (mode === 'search' ? node.classList.remove('search-last-clicked') : node.classList.remove('last-clicked')))
     // Add last-clicked class to the new element
     if (new_instance_path) {
       const new_element = shadow.querySelector(`[data-instance_path="${CSS.escape(new_instance_path)}"]`)
@@ -2568,7 +2540,17 @@ async function graph_explorer (opts) {
     if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
       return
     }
+    const on_bind = {
+      navigate_up_current_node,
+      navigate_down_current_node,
+      toggle_subs_for_current_node,
+      toggle_hubs_for_current_node,
+      multiselect_current_node,
+      select_between_current_node,
+      toggle_search_mode,
+      jump_to_next_duplicate
 
+    }
     let key_combination = ''
     if (event.ctrlKey) key_combination += 'Control+'
     if (event.altKey) key_combination += 'Alt+'
@@ -2580,30 +2562,17 @@ async function graph_explorer (opts) {
 
     // Prevent default behavior for handled keys
     event.preventDefault()
-
+    const base_path = last_clicked_node.split('|').pop()
+    const current_instance_path = last_clicked_node
     // Execute the appropriate action
-    switch (action) {
-    case 'navigate_up':
-      navigate_to_adjacent_node(-1)
-      break
-    case 'navigate_down':
-      navigate_to_adjacent_node(1)
-      break
-    case 'toggle_subs':
-      toggle_subs_for_current_node()
-      break
-    case 'toggle_hubs':
-      toggle_hubs_for_current_node()
-      break
-    case 'multiselect':
-      multiselect_current_node()
-      break
-    case 'select_between':
-      select_between_current_node()
-      break
-    }
+    on_bind[action]({ base_path, current_instance_path })
   }
-
+  function navigate_up_current_node () {
+    navigate_to_adjacent_node(-1)
+  }
+  function navigate_down_current_node () {
+    navigate_to_adjacent_node(1)
+  }
   function navigate_to_adjacent_node (direction) {
     if (view.length === 0) return
     if (!last_clicked_node) last_clicked_node = view[0].instance_path
@@ -2631,6 +2600,17 @@ async function graph_explorer (opts) {
   function toggle_subs_for_current_node () {
     if (!last_clicked_node) return
 
+    const base_path = last_clicked_node.split('|').pop()
+    const entry = all_entries[base_path]
+    const has_subs = Array.isArray(entry?.subs) && entry.subs.length > 0
+    if (!has_subs) return
+
+    if (hubs_flag === 'default') {
+      const has_duplicate_entries = has_duplicates(base_path)
+      const is_first_occurrence = is_first_duplicate(base_path, last_clicked_node)
+      if (has_duplicate_entries && !is_first_occurrence) return
+    }
+
     if (mode === 'search' && search_query) {
       toggle_search_subs(last_clicked_node)
     } else {
@@ -2640,6 +2620,18 @@ async function graph_explorer (opts) {
 
   function toggle_hubs_for_current_node () {
     if (!last_clicked_node) return
+
+    const base_path = last_clicked_node.split('|').pop()
+    const entry = all_entries[base_path]
+    const has_hubs = hubs_flag === 'false' ? false : Array.isArray(entry?.hubs) && entry.hubs.length > 0
+    if (!has_hubs || base_path === '/') return
+
+    if (hubs_flag === 'default') {
+      const has_duplicate_entries = has_duplicates(base_path)
+      const is_first_occurrence = is_first_duplicate(base_path, last_clicked_node)
+
+      if (has_duplicate_entries && !is_first_occurrence) return
+    }
 
     if (mode === 'search' && search_query) {
       toggle_search_hubs(last_clicked_node)
@@ -2700,6 +2692,12 @@ async function graph_explorer (opts) {
       update_drive_state({ type: 'runtime/vertical_scroll_value', message: vertical_scroll_value })
     }
   }
+
+  function jump_to_next_duplicate ({ base_path, current_instance_path }) {
+    if (hubs_flag === 'default') {
+      cycle_to_next_duplicate(base_path, current_instance_path)
+    }
+  }
 }
 
 /******************************************************************************
@@ -2750,12 +2748,14 @@ function fallback_module () {
         'keybinds/': {
           'navigation.json': {
             raw: JSON.stringify({
-              ArrowUp: 'navigate_up',
-              ArrowDown: 'navigate_down',
-              'Control+ArrowDown': 'toggle_subs',
-              'Control+ArrowUp': 'toggle_hubs',
-              'Alt+s': 'multiselect',
-              'Alt+b': 'select_between'
+              ArrowUp: 'navigate_up_current_node',
+              ArrowDown: 'navigate_down_current_node',
+              'Control+ArrowDown': 'toggle_subs_for_current_node',
+              'Control+ArrowUp': 'toggle_hubs_for_current_node',
+              'Alt+s': 'multiselect_current_node',
+              'Alt+b': 'select_between_current_node',
+              'Control+m': 'toggle_search_mode',
+              'Alt+j': 'jump_to_next_duplicate'
             })
           }
         }
