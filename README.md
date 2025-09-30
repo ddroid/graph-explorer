@@ -124,3 +124,92 @@ The `style` message provides a string of CSS content that will be injected direc
 The component maintains a complete `view` array representing the flattened, visible graph structure. It uses an `IntersectionObserver` with two sentinel elements at the top and bottom of the scrollable container.
 
 When a sentinel becomes visible, the component dynamically renders the next or previous "chunk" of nodes and removes nodes that have scrolled far out of view. This ensures that the number of DOM elements remains small and constant, providing excellent performance regardless of the total number of nodes in the graph.
+
+## Modes
+
+The graph explorer supports three distinct modes that change how users interact with the component:
+
+### default
+The standard navigation mode where users can:
+- Click to expand/collapse nodes
+- Navigate the graph
+- Select individual nodes
+
+### menubar
+An enhanced mode with a visible menubar providing gui based quick access to:
+- Mode switching button
+- Flag toggles
+- Multi-select control
+- Select-between control
+
+### search
+A specialized mode for finding and filtering nodes:
+- Displays a search input bar
+- Filters the view to show only matching nodes
+- Supports multi-select and select-between operations on search results
+
+**Mode State Management:**
+- Current mode is stored in `drive` at `mode/current_mode.json`
+- Previous mode is tracked in `mode/previous_mode.json` (used when exiting search)
+- Search query is persisted in `mode/search_query.json`
+
+## Flags
+
+Flags control behaviors of the graph explorer. They are stored in the `flags/` dataset:
+
+### hubs (`flags/hubs.json`)
+Controls the display of hub connections (non-hierarchical relationships):
+- `"default"` - Hubs are collapsed by default
+- `"true"` - All hubs are expanded
+- `"false"` - All hubs are hidden
+
+Toggle through values using the menubar button in menubar mode.
+
+### selection (`flags/selection.json`)
+Enables or disables node selection functionality:
+- `true` - Users can select nodes (default)
+- `false` - Selection is disabled
+
+### recursive_collapse (`flags/recursive_collapse.json`)
+Controls collapse behavior for hierarchical nodes:
+- `true` - Collapsing a node also collapses all its descendants (default)
+- `false` - Only the clicked node is collapsed
+
+## Keybinds
+
+The graph explorer supports keyboard navigation and actions. Keybinds are defined in `keybinds/navigation.json` and can be customized through the drive system.
+
+### Default Keybinds
+
+| Key Combination | Action | Description |
+|----------------|--------|-------------|
+| `ArrowUp` | Navigate Up | Move focus to the previous visible node |
+| `ArrowDown` | Navigate Down | Move focus to the next visible node |
+| `Control+ArrowDown` | Toggle Subs | Expand/collapse child nodes (subs) of the current node |
+| `Control+ArrowUp` | Toggle Hubs | Expand/collapse hub connections of the current node |
+| `Alt+s` | Multi-select | Add/remove the current node to/from the selection |
+| `Alt+b` | Select Between | Select all nodes between the last clicked and current node |
+| `Control+m` | Toggle Search | Switch between current mode and search mode |
+| `Alt+j` | Jump to Next Duplicate | Navigate to the next occurrence of a duplicate node |
+
+**Customizing Keybinds:**
+
+Keybinds can be customized by updating the `keybinds/navigation.json` file in the drive with a JSON object mapping key combinations to action names:
+
+```javascript
+{
+  "ArrowUp": "navigate_up_current_node",
+  "ArrowDown": "navigate_down_current_node",
+  "Control+ArrowDown": "toggle_subs_for_current_node",
+  "Control+ArrowUp": "toggle_hubs_for_current_node",
+  "Alt+s": "multiselect_current_node",
+  "Alt+b": "select_between_current_node",
+  "Control+m": "toggle_search_mode",
+  "Alt+j": "jump_to_next_duplicate"
+}
+```
+
+**Key Combination Format:**
+- Modifier keys: `Control+`, `Alt+`, `Shift+`
+- Can combine multiple modifiers: `Control+Shift+Key`
+- Key names follow standard JavaScript `event.key` values
