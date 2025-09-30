@@ -14,12 +14,18 @@ Require the `graph_explorer` function and call it with a configuration object. I
 ```javascript
 const graph_explorer = require('./graph_explorer.js')
 
-// Provide `opts` and `Protocol` as parameters
-const graphElement = await graph_explorer(opts, protocol);
+// Provide `opts` and optional `protocol` as parameters
+const graph = await graph_explorer(opts, protocol)
 
 // Append the element to your application's body or another container
-document.body.appendChild(graphElement);
+document.body.appendChild(graph)
 ```
+
+### Protocol System
+
+The graph explorer supports bidirectional message-based communication through an optional protocol parameter. This allows parent modules to:
+- Control the graph explorer programmatically (change modes, select nodes, expand/collapse, etc.)
+- Receive notifications about user interactions and state changes
 
 ## Drive
 
