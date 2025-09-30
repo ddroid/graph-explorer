@@ -3,12 +3,13 @@
 },{}],2:[function(require,module,exports){
 (function (__filename){(function (){
 const STATE = require('./STATE')
+const graphdb = require('./graphdb')
 const statedb = STATE(__filename)
 const { get } = statedb(fallback_module)
 
 module.exports = graph_explorer
 
-async function graph_explorer (opts) {
+async function graph_explorer (opts, protocol) {
   /******************************************************************************
   1. COMPONENT INITIALIZATION
     - This sets up the initial state, variables, and the basic DOM structure.
@@ -22,7 +23,7 @@ async function graph_explorer (opts) {
   let horizontal_scroll_value = 0
   let selected_instance_paths = []
   let confirmed_instance_paths = []
-  let all_entries = {} // Holds the entire graph structure from entries.json.
+  let db = null // Database for entries
   let instance_states = {} // Holds expansion state {expanded_subs, expanded_hubs} for each node instance.
   let search_state_instances = {}
   let search_entry_states = {} // Holds expansion state for search mode interactions separately
@@ -54,6 +55,12 @@ async function graph_explorer (opts) {
   let root_wand_state = null // Store original root wand state when replaced with jump button
   const manipulated_inside_search = {}
   let keybinds = {} // Store keyboard navigation bindings
+
+  // Protocol system for message-based communication
+  let send = null
+  if (protocol) {
+    send = protocol(msg => onmessage(msg))
+  }
 
   const el = document.createElement('div')
   el.className = 'graph-explorer-wrapper'
@@ -102,6 +109,134 @@ async function graph_explorer (opts) {
   document.onkeydown = handle_keyboard_navigation
 
   return el
+
+  /******************************************************************************
+    PROTOCOL MESSAGE HANDLING
+    - Handles incoming messages and sends outgoing messages.
+    - @TODO: define the messages we wanna to send inorder to receive some info.
+******************************************************************************/
+  function onmessage ({ type, data }) {
+    const on_message_types = {
+      set_mode: handle_set_mode,
+      set_search_query: handle_set_search_query,
+      select_nodes: handle_select_nodes,
+      expand_node: handle_expand_node,
+      collapse_node: handle_collapse_node,
+      toggle_node: handle_toggle_node,
+      get_selected: handle_get_selected,
+      get_confirmed: handle_get_confirmed,
+      clear_selection: handle_clear_selection,
+      set_flag: handle_set_flag,
+      scroll_to_node: handle_scroll_to_node
+    }
+
+    const handler = on_message_types[type]
+    if (handler) handler(data)
+    else console.warn(`[graph_explorer-protocol] Unknown message type: ${type}`, data)
+
+    function handle_set_mode (data) {
+      const { mode: new_mode } = data
+      if (new_mode && ['default', 'menubar', 'search'].includes(new_mode)) {
+        update_drive_state({ type: 'mode/current_mode', message: new_mode })
+        send_message({ type: 'mode_changed', data: { mode: new_mode } })
+      }
+    }
+
+    function handle_set_search_query (data) {
+      const { query } = data
+      if (typeof query === 'string') {
+        search_query = query
+        drive_updated_by_search = true
+        update_drive_state({ type: 'mode/search_query', message: query })
+        if (mode === 'search') perform_search(query)
+        send_message({ type: 'search_query_changed', data: { query } })
+      }
+    }
+
+    function handle_select_nodes (data) {
+      const { instance_paths } = data
+      if (Array.isArray(instance_paths)) {
+        update_drive_state({ type: 'runtime/selected_instance_paths', message: instance_paths })
+        send_message({ type: 'selection_changed', data: { selected: instance_paths } })
+      }
+    }
+
+    function handle_expand_node (data) {
+      const { instance_path, expand_subs = true, expand_hubs = false } = data
+      if (instance_path && instance_states[instance_path]) {
+        instance_states[instance_path].expanded_subs = expand_subs
+        instance_states[instance_path].expanded_hubs = expand_hubs
+        drive_updated_by_toggle = true
+        update_drive_state({ type: 'runtime/instance_states', message: instance_states })
+        send_message({ type: 'node_expanded', data: { instance_path, expand_subs, expand_hubs } })
+      }
+    }
+
+    function handle_collapse_node (data) {
+      const { instance_path } = data
+      if (instance_path && instance_states[instance_path]) {
+        instance_states[instance_path].expanded_subs = false
+        instance_states[instance_path].expanded_hubs = false
+        drive_updated_by_toggle = true
+        update_drive_state({ type: 'runtime/instance_states', message: instance_states })
+        send_message({ type: 'node_collapsed', data: { instance_path } })
+      }
+    }
+
+    function handle_toggle_node (data) {
+      const { instance_path, toggle_type = 'subs' } = data
+      if (instance_path && instance_states[instance_path]) {
+        if (toggle_type === 'subs') {
+          toggle_subs(instance_path)
+        } else if (toggle_type === 'hubs') {
+          toggle_hubs(instance_path)
+        }
+        send_message({ type: 'node_toggled', data: { instance_path, toggle_type } })
+      }
+    }
+
+    function handle_get_selected (data) {
+      send_message({ type: 'selected_nodes', data: { selected: selected_instance_paths } })
+    }
+
+    function handle_get_confirmed (data) {
+      send_message({ type: 'confirmed_nodes', data: { confirmed: confirmed_instance_paths } })
+    }
+
+    function handle_clear_selection (data) {
+      update_drive_state({ type: 'runtime/selected_instance_paths', message: [] })
+      update_drive_state({ type: 'runtime/confirmed_selected', message: [] })
+      send_message({ type: 'selection_cleared', data: {} })
+    }
+
+    function handle_set_flag (data) {
+      const { flag_type, value } = data
+      if (flag_type === 'hubs' && ['default', 'true', 'false'].includes(value)) {
+        update_drive_state({ type: 'flags/hubs', message: value })
+      } else if (flag_type === 'selection') {
+        update_drive_state({ type: 'flags/selection', message: value })
+      } else if (flag_type === 'recursive_collapse') {
+        update_drive_state({ type: 'flags/recursive_collapse', message: value })
+      }
+      send_message({ type: 'flag_changed', data: { flag_type, value } })
+    }
+
+    function handle_scroll_to_node (data) {
+      const { instance_path } = data
+      const node_index = view.findIndex(n => n.instance_path === instance_path)
+      if (node_index !== -1) {
+        const scroll_position = node_index * node_height
+        container.scrollTop = scroll_position
+        send_message({ type: 'scrolled_to_node', data: { instance_path, scroll_position } })
+      }
+    }
+  }
+
+  function send_message ({ type, data }) {
+    if (send) {
+      send({ type, data })
+    }
+  }
 
   /******************************************************************************
   2. STATE AND DATA HANDLING
@@ -156,20 +291,20 @@ async function graph_explorer (opts) {
   function on_entries ({ data }) {
     if (!data || data[0] == null) {
       console.error('Entries data is missing or empty.')
-      all_entries = {}
+      db = graphdb({})
       return
     }
     const parsed_data = parse_json_data(data[0], 'entries.json')
     if (typeof parsed_data !== 'object' || !parsed_data) {
       console.error('Parsed entries data is not a valid object.')
-      all_entries = {}
+      db = graphdb({})
       return
     }
-    all_entries = parsed_data
+    db = graphdb(parsed_data)
 
     // After receiving entries, ensure the root node state is initialized and trigger the first render.
     const root_path = '/'
-    if (all_entries[root_path]) {
+    if (db.has(root_path)) {
       const root_instance_path = '|/'
       if (!instance_states[root_instance_path]) {
         instance_states[root_instance_path] = {
@@ -480,10 +615,11 @@ async function graph_explorer (opts) {
     parent_pipe_trail,
     parent_base_path,
     base_path,
-    all_entries
+    db
   }) {
     const children_pipe_trail = [...parent_pipe_trail]
-    const is_hub_on_top = base_path === all_entries[parent_base_path]?.hubs?.[0] || base_path === '/'
+    const parent_entry = db.get(parent_base_path)
+    const is_hub_on_top = base_path === parent_entry?.hubs?.[0] || base_path === '/'
 
     if (depth > 0) {
       if (is_hub) {
@@ -515,10 +651,11 @@ async function graph_explorer (opts) {
     parent_pipe_trail,
     parent_base_path,
     base_path,
-    all_entries
+    db
   }) {
     let last_pipe = null
-    const calculated_is_hub_on_top = base_path === all_entries[parent_base_path]?.hubs?.[0] || base_path === '/'
+    const parent_entry = db.get(parent_base_path)
+    const calculated_is_hub_on_top = base_path === parent_entry?.hubs?.[0] || base_path === '/'
     const final_is_hub_on_top = is_hub_on_top !== undefined ? is_hub_on_top : calculated_is_hub_on_top
 
     if (depth > 0) {
@@ -571,7 +708,7 @@ async function graph_explorer (opts) {
       })
     }
 
-    if (Object.keys(all_entries).length === 0) {
+    if (!db || db.isEmpty()) {
       console.warn('No entries available to render.')
       return
     }
@@ -591,7 +728,7 @@ async function graph_explorer (opts) {
       is_hub: false,
       parent_pipe_trail: [],
       instance_states,
-      all_entries
+      db
     })
 
     // Recalculate duplicates after view is built
@@ -634,7 +771,7 @@ async function graph_explorer (opts) {
     }
   }
 
-  // Traverses the hierarchical `all_entries` data and builds a flat `view` array for rendering.
+  // Traverses the hierarchical entries data and builds a flat `view` array for rendering.
   function build_view_recursive ({
     base_path,
     parent_instance_path,
@@ -645,10 +782,10 @@ async function graph_explorer (opts) {
     is_first_hub = false,
     parent_pipe_trail,
     instance_states,
-    all_entries
+    db
   }) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return []
 
     const state = get_or_create_state(instance_states, instance_path)
@@ -661,7 +798,7 @@ async function graph_explorer (opts) {
       parent_pipe_trail,
       parent_base_path,
       base_path,
-      all_entries
+      db
     })
 
     const current_view = []
@@ -679,7 +816,7 @@ async function graph_explorer (opts) {
             is_first_hub: is_hub ? is_hub_on_top : false,
             parent_pipe_trail: children_pipe_trail,
             instance_states,
-            all_entries
+            db
           })
         )
       })
@@ -709,7 +846,7 @@ async function graph_explorer (opts) {
             is_hub: false,
             parent_pipe_trail: children_pipe_trail,
             instance_states,
-            all_entries
+            db
           })
         )
       })
@@ -737,7 +874,7 @@ async function graph_explorer (opts) {
     is_in_original_view,
     query
   }) {
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) {
       const err_el = document.createElement('div')
       err_el.className = 'node error'
@@ -766,7 +903,7 @@ async function graph_explorer (opts) {
       parent_pipe_trail,
       parent_base_path,
       base_path,
-      all_entries
+      db
     })
 
     const el = document.createElement('div')
@@ -1018,6 +1155,7 @@ async function graph_explorer (opts) {
   function toggle_search_mode () {
     const target_mode = mode === 'search' ? previous_mode : 'search'
     console.log('[SEARCH DEBUG] Switching mode from', mode, 'to', target_mode)
+    send_message({ type: 'mode_toggling', data: { from: mode, to: target_mode } })
     if (mode === 'search') {
       // When switching from search to default mode, expand selected entries
       if (selected_instance_paths.length > 0) {
@@ -1039,6 +1177,7 @@ async function graph_explorer (opts) {
     ignore_drive_updated_by_scroll = true
     update_drive_state({ type: 'mode/current_mode', message: target_mode })
     search_state_instances = instance_states
+    send_message({ type: 'mode_changed', data: { mode: target_mode } })
   }
 
   function toggle_multi_select () {
@@ -1125,28 +1264,25 @@ async function graph_explorer (opts) {
       is_hub: false,
       parent_pipe_trail: [],
       instance_states,
-      all_entries
+      db
     })
     const original_view_paths = original_view.map(n => n.instance_path)
     search_state_instances = {}
     const search_tracking = {}
-    const search_view = build_search_view_recursive({
-      query,
+    view = build_search_view_recursive({
       base_path: '/',
       parent_instance_path: '',
-      parent_base_path: null,
       depth: 0,
       is_last_sub: true,
       is_hub: false,
       is_first_hub: false,
       parent_pipe_trail: [],
       instance_states: search_state_instances,
-      all_entries,
+      db,
       original_view_paths,
       is_expanded_child: false,
       search_tracking
     })
-
     console.log('[SEARCH DEBUG] Search view built:', search_view.length)
     render_search_results(search_view, query)
   }
@@ -1162,12 +1298,12 @@ async function graph_explorer (opts) {
     is_first_hub = false,
     parent_pipe_trail,
     instance_states,
-    all_entries,
+    db,
     original_view_paths,
     is_expanded_child = false,
     search_tracking = {}
   }) {
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return []
 
     const instance_path = `${parent_instance_path}|${base_path}`
@@ -1187,7 +1323,7 @@ async function graph_explorer (opts) {
       parent_pipe_trail,
       parent_base_path,
       base_path,
-      all_entries
+      db
     })
 
     // Process hubs if they should be expanded
@@ -1208,7 +1344,7 @@ async function graph_explorer (opts) {
         is_first_hub: is_hub_on_top,
         parent_pipe_trail: children_pipe_trail,
         instance_states,
-        all_entries,
+        db,
         original_view_paths,
         is_expanded_child: true,
         search_tracking
@@ -1231,7 +1367,7 @@ async function graph_explorer (opts) {
           is_first_hub: false,
           parent_pipe_trail: children_pipe_trail,
           instance_states,
-          all_entries,
+          db,
           original_view_paths,
           is_expanded_child: true,
           search_tracking
@@ -1251,7 +1387,7 @@ async function graph_explorer (opts) {
           is_first_hub: false,
           parent_pipe_trail: children_pipe_trail,
           instance_states,
-          all_entries,
+          db,
           original_view_paths,
           is_expanded_child: false,
           search_tracking
@@ -1327,6 +1463,7 @@ async function graph_explorer (opts) {
   function select_node (ev, instance_path) {
     last_clicked_node = instance_path
     update_drive_state({ type: 'runtime/last_clicked_node', message: instance_path })
+    send_message({ type: 'node_clicked', data: { instance_path } })
 
     // Handle shift+click to enable select between mode temporarily
     if (ev.shiftKey && !select_between_enabled) {
@@ -1343,8 +1480,10 @@ async function graph_explorer (opts) {
     } else if (ev.ctrlKey || multi_select_enabled) {
       new_selected.has(instance_path) ? new_selected.delete(instance_path) : new_selected.add(instance_path)
       update_drive_state({ type: 'runtime/selected_instance_paths', message: [...new_selected] })
+      send_message({ type: 'selection_changed', data: { selected: [...new_selected] } })
     } else {
       update_drive_state({ type: 'runtime/selected_instance_paths', message: [instance_path] })
+      send_message({ type: 'selection_changed', data: { selected: [instance_path] } })
     }
   }
 
@@ -1409,7 +1548,7 @@ async function graph_explorer (opts) {
       const child_base = parts[i + 1]
       const parent_instance_path = parts.slice(0, i + 1).map(p => '|' + p).join('')
       const parent_state = get_or_create_state(instance_states, parent_instance_path)
-      const parent_entry = all_entries[parent_base]
+      const parent_entry = db.get(parent_base)
 
       console.log('[SEARCH DEBUG] Processing parent-child relationship:', {
         parent_base,
@@ -1506,11 +1645,11 @@ async function graph_explorer (opts) {
 
     // Update view order tracking for the toggled subs
     const base_path = instance_path.split('|').pop()
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
 
     if (entry && Array.isArray(entry.subs)) {
-      if (was_expanded && recursive_collapse_flag === true) entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, all_entries))
-      else entry.subs.forEach(sub_path => toggle_subs_instance(sub_path, instance_path, instance_states, all_entries))
+      if (was_expanded && recursive_collapse_flag === true) entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, db))
+      else entry.subs.forEach(sub_path => toggle_subs_instance(sub_path, instance_path, instance_states, db))
     }
 
     last_clicked_node = instance_path
@@ -1520,20 +1659,21 @@ async function graph_explorer (opts) {
     // Set a flag to prevent the subsequent `onbatch` call from causing a render loop.
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
+    send_message({ type: 'subs_toggled', data: { instance_path, expanded: state.expanded_subs } })
 
-    function toggle_subs_instance (sub_path, instance_path, instance_states, all_entries) {
+    function toggle_subs_instance (sub_path, instance_path, instance_states, db) {
       if (was_expanded) {
         // Collapsing so
-        remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(sub_path, instance_path, instance_states, db)
       } else {
         // Expanding so
-        add_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+        add_instances_recursively(sub_path, instance_path, instance_states, db)
       }
     }
 
-    function collapse_and_remove_instance (sub_path, instance_path, instance_states, all_entries) {
-      collapse_subs_recursively(sub_path, instance_path, instance_states, all_entries)
-      remove_instances_recursively(sub_path, instance_path, instance_states, all_entries)
+    function collapse_and_remove_instance (sub_path, instance_path, instance_states, db) {
+      collapse_subs_recursively(sub_path, instance_path, instance_states, db)
+      remove_instances_recursively(sub_path, instance_path, instance_states, db)
     }
   }
 
@@ -1545,20 +1685,20 @@ async function graph_explorer (opts) {
 
     // Update view order tracking for the toggled hubs
     const base_path = instance_path.split('|').pop()
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
 
     if (entry && Array.isArray(entry.hubs)) {
       if (was_expanded && recursive_collapse_flag === true) {
         // collapse all hub descendants
-        entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, all_entries))
+        entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, db))
       } else {
         // only toggle direct hubs
-        entry.hubs.forEach(hub_path => toggle_hubs_instance(hub_path, instance_path, instance_states, all_entries))
+        entry.hubs.forEach(hub_path => toggle_hubs_instance(hub_path, instance_path, instance_states, db))
       }
 
-      function collapse_and_remove_instance (hub_path, instance_path, instance_states, all_entries) {
-        collapse_hubs_recursively(hub_path, instance_path, instance_states, all_entries)
-        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+      function collapse_and_remove_instance (hub_path, instance_path, instance_states, db) {
+        collapse_hubs_recursively(hub_path, instance_path, instance_states, db)
+        remove_instances_recursively(hub_path, instance_path, instance_states, db)
       }
     }
 
@@ -1569,14 +1709,15 @@ async function graph_explorer (opts) {
     build_and_render_view(instance_path, true)
     drive_updated_by_toggle = true
     update_drive_state({ type: 'runtime/instance_states', message: instance_states })
+    send_message({ type: 'hubs_toggled', data: { instance_path, expanded: state.expanded_hubs } })
 
-    function toggle_hubs_instance (hub_path, instance_path, instance_states, all_entries) {
+    function toggle_hubs_instance (hub_path, instance_path, instance_states, db) {
       if (was_expanded) {
         // Collapsing so
-        remove_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+        remove_instances_recursively(hub_path, instance_path, instance_states, db)
       } else {
         // Expanding so
-        add_instances_recursively(hub_path, instance_path, instance_states, all_entries)
+        add_instances_recursively(hub_path, instance_path, instance_states, db)
       }
     }
   }
@@ -1596,8 +1737,8 @@ async function graph_explorer (opts) {
 
     if (old_expanded && recursive_collapse_flag === true) {
       const base_path = instance_path.split('|').pop()
-      const entry = all_entries[base_path]
-      if (entry && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => collapse_search_subs_recursively(sub_path, instance_path, search_entry_states, all_entries))
+      const entry = db.get(base_path)
+      if (entry && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => collapse_search_subs_recursively(sub_path, instance_path, search_entry_states, db))
     }
 
     const has_matching_descendant = search_state_instances[instance_path]?.expanded_subs ? null : true
@@ -1632,8 +1773,8 @@ async function graph_explorer (opts) {
 
     if (old_expanded && recursive_collapse_flag === true) {
       const base_path = instance_path.split('|').pop()
-      const entry = all_entries[base_path]
-      if (entry && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => collapse_search_hubs_recursively(hub_path, instance_path, search_entry_states, all_entries))
+      const entry = db.get(base_path)
+      if (entry && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => collapse_search_hubs_recursively(hub_path, instance_path, search_entry_states, db))
     }
 
     const has_matching_descendant = search_state_instances[instance_path]?.expanded_subs
@@ -1982,12 +2123,12 @@ async function graph_explorer (opts) {
   function initialize_tracking_from_current_state () {
     const root_path = '/'
     const root_instance_path = '|/'
-    if (all_entries[root_path]) {
+    if (db.has(root_path)) {
       add_instance_to_view_tracking(root_path, root_instance_path)
       // Add initially expanded subs if any
-      const root_entry = all_entries[root_path]
+      const root_entry = db.get(root_path)
       if (root_entry && Array.isArray(root_entry.subs)) {
-        root_entry.subs.forEach(sub_path => add_instances_recursively(sub_path, root_instance_path, instance_states, all_entries))
+        root_entry.subs.forEach(sub_path => add_instances_recursively(sub_path, root_instance_path, instance_states, db))
       }
     }
   }
@@ -2025,19 +2166,19 @@ async function graph_explorer (opts) {
   }
 
   // Recursively add instances to tracking when expanding
-  function add_instances_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+  function add_instances_recursively (base_path, parent_instance_path, instance_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(instance_states, instance_path)
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
-      entry.hubs.forEach(hub_path => add_instances_recursively(hub_path, instance_path, instance_states, all_entries))
+      entry.hubs.forEach(hub_path => add_instances_recursively(hub_path, instance_path, instance_states, db))
     }
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
-      entry.subs.forEach(sub_path => add_instances_recursively(sub_path, instance_path, instance_states, all_entries))
+      entry.subs.forEach(sub_path => add_instances_recursively(sub_path, instance_path, instance_states, db))
     }
 
     // Add the instance itself
@@ -2045,48 +2186,48 @@ async function graph_explorer (opts) {
   }
 
   // Recursively remove instances from tracking when collapsing
-  function remove_instances_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+  function remove_instances_recursively (base_path, parent_instance_path, instance_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(instance_states, instance_path)
 
-    if (state.expanded_hubs && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => remove_instances_recursively(hub_path, instance_path, instance_states, all_entries))
-    if (state.expanded_subs && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => remove_instances_recursively(sub_path, instance_path, instance_states, all_entries))
+    if (state.expanded_hubs && Array.isArray(entry.hubs)) entry.hubs.forEach(hub_path => remove_instances_recursively(hub_path, instance_path, instance_states, db))
+    if (state.expanded_subs && Array.isArray(entry.subs)) entry.subs.forEach(sub_path => remove_instances_recursively(sub_path, instance_path, instance_states, db))
 
     // Remove the instance itself
     remove_instance_from_view_tracking(base_path, instance_path)
   }
 
   // Recursively hubs all subs in default mode
-  function collapse_subs_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+  function collapse_subs_recursively (base_path, parent_instance_path, instance_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(instance_states, instance_path)
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, all_entries))
+      entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, db))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
       hub_num = Math.max(0, hub_num - 1) // Decrement hub counter
-      entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, all_entries))
+      entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, db))
     }
-    function collapse_and_remove_instance (base_path, instance_path, instance_states, all_entries) {
-      collapse_subs_recursively(base_path, instance_path, instance_states, all_entries)
-      remove_instances_recursively(base_path, instance_path, instance_states, all_entries)
+    function collapse_and_remove_instance (base_path, instance_path, instance_states, db) {
+      collapse_subs_recursively(base_path, instance_path, instance_states, db)
+      remove_instances_recursively(base_path, instance_path, instance_states, db)
     }
   }
 
   // Recursively hubs all hubs in default mode
-  function collapse_hubs_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+  function collapse_hubs_recursively (base_path, parent_instance_path, instance_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(instance_states, instance_path)
@@ -2094,98 +2235,98 @@ async function graph_explorer (opts) {
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
       hub_num = Math.max(0, hub_num - 1)
-      entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, all_entries))
+      entry.hubs.forEach(hub_path => collapse_and_remove_instance(hub_path, instance_path, instance_states, db))
     }
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, all_entries))
+      entry.subs.forEach(sub_path => collapse_and_remove_instance(sub_path, instance_path, instance_states, db))
     }
-    function collapse_and_remove_instance (base_path, instance_path, instance_states, all_entries) {
-      collapse_all_recursively(base_path, instance_path, instance_states, all_entries)
-      remove_instances_recursively(base_path, instance_path, instance_states, all_entries)
+    function collapse_and_remove_instance (base_path, instance_path, instance_states, db) {
+      collapse_all_recursively(base_path, instance_path, instance_states, db)
+      remove_instances_recursively(base_path, instance_path, instance_states, db)
     }
   }
 
   // Recursively collapse in default mode
-  function collapse_all_recursively (base_path, parent_instance_path, instance_states, all_entries) {
+  function collapse_all_recursively (base_path, parent_instance_path, instance_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(instance_states, instance_path)
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => collapse_and_remove_instance_recursively(sub_path, instance_path, instance_states, all_entries))
+      entry.subs.forEach(sub_path => collapse_and_remove_instance_recursively(sub_path, instance_path, instance_states, db))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
       hub_num = Math.max(0, hub_num - 1)
-      entry.hubs.forEach(hub_path => collapse_and_remove_instance_recursively(hub_path, instance_path, instance_states, all_entries))
+      entry.hubs.forEach(hub_path => collapse_and_remove_instance_recursively(hub_path, instance_path, instance_states, db))
     }
 
-    function collapse_and_remove_instance_recursively (base_path, instance_path, instance_states, all_entries) {
-      collapse_all_recursively(base_path, instance_path, instance_states, all_entries)
-      remove_instances_recursively(base_path, instance_path, instance_states, all_entries)
+    function collapse_and_remove_instance_recursively (base_path, instance_path, instance_states, db) {
+      collapse_all_recursively(base_path, instance_path, instance_states, db)
+      remove_instances_recursively(base_path, instance_path, instance_states, db)
     }
   }
 
   // Recursively subs all hubs in search mode
-  function collapse_search_subs_recursively (base_path, parent_instance_path, search_entry_states, all_entries) {
+  function collapse_search_subs_recursively (base_path, parent_instance_path, search_entry_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(search_entry_states, instance_path)
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries))
+      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, db))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
-      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries))
+      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, db))
     }
   }
 
   // Recursively hubs all hubs in search mode
-  function collapse_search_hubs_recursively (base_path, parent_instance_path, search_entry_states, all_entries) {
+  function collapse_search_hubs_recursively (base_path, parent_instance_path, search_entry_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(search_entry_states, instance_path)
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
-      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries))
+      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, db))
     }
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries))
+      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, db))
     }
   }
 
   // Recursively collapse in search mode
-  function collapse_search_all_recursively (base_path, parent_instance_path, search_entry_states, all_entries) {
+  function collapse_search_all_recursively (base_path, parent_instance_path, search_entry_states, db) {
     const instance_path = `${parent_instance_path}|${base_path}`
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     if (!entry) return
 
     const state = get_or_create_state(search_entry_states, instance_path)
 
     if (state.expanded_subs && Array.isArray(entry.subs)) {
       state.expanded_subs = false
-      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, all_entries))
+      entry.subs.forEach(sub_path => collapse_search_all_recursively(sub_path, instance_path, search_entry_states, db))
     }
 
     if (state.expanded_hubs && Array.isArray(entry.hubs)) {
       state.expanded_hubs = false
-      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, all_entries))
+      entry.hubs.forEach(hub_path => collapse_search_all_recursively(hub_path, instance_path, search_entry_states, db))
     }
   }
 
@@ -2593,7 +2734,13 @@ async function graph_explorer (opts) {
     } else {
       update_last_clicked_styling(last_clicked_node)
     }
-
+    const base_path = last_clicked_node.split('|').pop()
+    const has_duplicate_entries = has_duplicates(base_path)
+    const is_first_occurrence = is_first_duplicate(base_path, last_clicked_node)
+    if (has_duplicate_entries && !is_first_occurrence) {
+      const el = shadow.querySelector(`[data-instance_path="${CSS.escape(last_clicked_node)}"]`)
+      add_jump_button_to_matching_entry(el, base_path, last_clicked_node)
+    }
     scroll_to_node(new_node.instance_path)
   }
 
@@ -2601,7 +2748,7 @@ async function graph_explorer (opts) {
     if (!last_clicked_node) return
 
     const base_path = last_clicked_node.split('|').pop()
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     const has_subs = Array.isArray(entry?.subs) && entry.subs.length > 0
     if (!has_subs) return
 
@@ -2622,7 +2769,7 @@ async function graph_explorer (opts) {
     if (!last_clicked_node) return
 
     const base_path = last_clicked_node.split('|').pop()
-    const entry = all_entries[base_path]
+    const entry = db.get(base_path)
     const has_hubs = hubs_flag === 'false' ? false : Array.isArray(entry?.hubs) && entry.hubs.length > 0
     if (!has_hubs || base_path === '/') return
 
@@ -2765,7 +2912,52 @@ function fallback_module () {
 }
 
 }).call(this)}).call(this,"/lib/graph_explorer.js")
-},{"./STATE":1}],3:[function(require,module,exports){
+},{"./STATE":1,"./graphdb":3}],3:[function(require,module,exports){
+module.exports = graphdb
+
+function graphdb (entries) {
+  // Validate entries
+  if (!entries || typeof entries !== 'object') {
+    console.warn('[graphdb] Invalid entries provided, using empty object')
+    entries = {}
+  }
+
+  const api = {
+    get,
+    has,
+    keys,
+    isEmpty,
+    root,
+    raw
+  }
+
+  return api
+
+   function get (path) {
+    return entries[path] || null
+  }
+
+   function has (path) {
+    return path in entries
+  }
+   function keys () {
+    return Object.keys(entries)
+  }
+
+   function isEmpty () {
+    return Object.keys(entries).length === 0
+  }
+
+   function root () {
+    return entries['/'] || null
+  }
+
+   function raw () {
+    return entries
+  }
+}
+
+},{}],4:[function(require,module,exports){
 const prefix = 'https://raw.githubusercontent.com/alyhxn/playproject/main/'
 const init_url = location.hash === '#dev' ? 'web/init.js' : prefix + 'src/node_modules/init.js'
 const args = arguments
@@ -2788,7 +2980,7 @@ fetch(init_url, fetch_opts)
     require('./page') // or whatever is otherwise the main entry of our project
   })
 
-},{"./page":4}],4:[function(require,module,exports){
+},{"./page":5}],5:[function(require,module,exports){
 (function (__filename){(function (){
 const STATE = require('../lib/STATE')
 const statedb = STATE(__filename)
@@ -2892,4 +3084,4 @@ function fallback_module () {
 }
 
 }).call(this)}).call(this,"/web/page.js")
-},{"..":2,"../lib/STATE":1}]},{},[3]);
+},{"..":2,"../lib/STATE":1}]},{},[4]);
