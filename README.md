@@ -27,6 +27,8 @@ The graph explorer supports bidirectional message-based communication through an
 - Control the graph explorer programmatically (change modes, select nodes, expand/collapse, etc.)
 - Receive notifications about user interactions and state changes
 
+For complete protocol documentation, see [PROTOCOL.md](./PROTOCOL.md).
+
 ## Drive
 
 The component expects to receive data through datasets in drive. It responds to two types of messages: `entries` and `style`.
