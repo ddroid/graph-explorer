@@ -1269,7 +1269,8 @@ async function graph_explorer (opts, protocol) {
     const original_view_paths = original_view.map(n => n.instance_path)
     search_state_instances = {}
     const search_tracking = {}
-    view = build_search_view_recursive({
+    const search_view = build_search_view_recursive({
+      query,
       base_path: '/',
       parent_instance_path: '',
       depth: 0,
