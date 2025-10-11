@@ -83,7 +83,8 @@ function fallback_module () {
           runtime: 'runtime',
           mode: 'mode',
           flags: 'flags',
-          keybinds: 'keybinds'
+          keybinds: 'keybinds',
+          undo: 'undo'
         }
       }
     },
@@ -94,7 +95,8 @@ function fallback_module () {
       'runtime/': {},
       'mode/': {},
       'flags/': {},
-      'keybinds/': {}
+      'keybinds/': {},
+      'undo/': {}
     }
   }
 }
