@@ -11,11 +11,11 @@ module.exports = graph_explorer
 
 async function graph_explorer (opts, protocol) {
   /******************************************************************************
-  1. COMPONENT INITIALIZATION
+  COMPONENT INITIALIZATION
     - This sets up the initial state, variables, and the basic DOM structure.
     - It also initializes the IntersectionObserver for virtual scrolling and
       sets up the watcher for state changes.
-******************************************************************************/
+  ******************************************************************************/
   const { sdb } = await get(opts.sid)
   const { drive } = sdb
 
@@ -41,6 +41,7 @@ async function graph_explorer (opts, protocol) {
   let ignore_drive_updated_by_scroll = false // Prevent scroll flag.
   let drive_updated_by_match = false // Flag to prevent `onbatch` from re-rendering on matching entry updates.
   let drive_updated_by_tracking = false // Flag to prevent `onbatch` from re-rendering on view order tracking updates.
+  let drive_updated_by_undo = false // Flag to prevent onbatch from re-rendering on undo updates
   let is_loading_from_drive = false // Flag to prevent saving to drive during initial load
   let multi_select_enabled = false // Flag to enable multi-select mode without ctrl key
   let select_between_enabled = false // Flag to enable select between mode
@@ -55,6 +56,7 @@ async function graph_explorer (opts, protocol) {
   let root_wand_state = null // Store original root wand state when replaced with jump button
   const manipulated_inside_search = {}
   let keybinds = {} // Store keyboard navigation bindings
+  let undo_stack = [] // Stack to track drive state changes for undo functionality
 
   // Protocol system for message-based communication
   let send = null
@@ -101,7 +103,8 @@ async function graph_explorer (opts, protocol) {
     runtime: on_runtime,
     mode: on_mode,
     flags: on_flags,
-    keybinds: on_keybinds
+    keybinds: on_keybinds,
+    undo: on_undo
   }
   // Start watching for state changes. This is the main trigger for all updates.
   await sdb.watch(onbatch)
@@ -111,10 +114,10 @@ async function graph_explorer (opts, protocol) {
   return el
 
   /******************************************************************************
-    PROTOCOL MESSAGE HANDLING
+ESSAGE HANDLING
     - Handles incoming messages and sends outgoing messages.
     - @TODO: define the messages we wanna to send inorder to receive some info.
-******************************************************************************/
+  ******************************************************************************/
   function onmessage ({ type, data }) {
     const on_message_types = {
       set_mode: handle_set_mode,
@@ -239,10 +242,10 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  2. STATE AND DATA HANDLING
+  STATE AND DATA HANDLING
     - These functions process incoming data from the STATE module's `sdb.watch`.
     - `onbatch` is the primary entry point.
-******************************************************************************/
+  ******************************************************************************/
   async function onbatch (batch) {
     console.log('[SEARCH DEBUG] onbatch caled:', {
       mode,
@@ -586,13 +589,65 @@ async function graph_explorer (opts, protocol) {
     keybinds = parsed_data
   }
 
+  function on_undo ({ data }) {
+    if (!data || data[0] == null) {
+      console.error('Undo stack data is missing or empty.')
+      return
+    }
+    const parsed_data = parse_json_data(data[0])
+    if (!Array.isArray(parsed_data)) {
+      console.error('Parsed undo stack data is not a valid array.')
+      return
+    }
+    undo_stack = parsed_data
+  }
+
   // Helper to persist component state to the drive.
   async function update_drive_state ({ type, message }) {
+    // Save current state to undo stack before updating (except for some)
+    const should_track = (
+      !drive_updated_by_undo &&
+      !type.includes('scroll') &&
+      !type.includes('last_clicked') &&
+      !type.includes('view_order_tracking') &&
+      !type.includes('select_between') &&
+      type !== 'undo/stack'
+    )
+    if (should_track) {
+      await save_to_undo_stack(type)
+    }
+
     try {
       await drive.put(`${type}.json`, JSON.stringify(message))
     } catch (e) {
       const [dataset, name] = type.split('/')
       console.error(`Failed to update ${dataset} state for ${name}:`, e)
+    }
+    if (should_track) {
+      render_menubar()
+    }
+  }
+
+  async function save_to_undo_stack (type) {
+    try {
+      const current_file = await drive.get(`${type}.json`)
+      if (current_file && current_file.raw) {
+        const snapshot = {
+          type,
+          value: current_file.raw,
+          timestamp: Date.now()
+        }
+
+        // Add to stack (limit to 50 items to prevent memory issues)
+        undo_stack.push(snapshot)
+        if (undo_stack.length > 50) {
+          undo_stack.shift()
+        }
+        drive_updated_by_undo = true
+        await drive.put('undo/stack.json', JSON.stringify(undo_stack))
+      }
+    } catch (e) {
+      console.error('Failed to save to undo stack:', e)
     }
   }
 
@@ -682,12 +737,12 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  3. VIEW AND RENDERING LOGIC AND SCALING
+  VIEW AND RENDERING LOGIC AND SCALING
     - These functions build the `view` array and render the DOM.
     - `build_and_render_view` is the main orchestrator.
     - `build_view_recursive` creates the flat `view` array from the hierarchical data.
     - `calculate_mobile_scale` calculates the scale factor for mobile devices.
-******************************************************************************/
+  ******************************************************************************/
   function build_and_render_view (focal_instance_path, hub_toggle = false) {
     console.log('[SEARCH DEBUG] build_and_render_view called:', {
       focal_instance_path,
@@ -858,7 +913,7 @@ async function graph_explorer (opts, protocol) {
  4. NODE CREATION AND EVENT HANDLING
    - `create_node` generates the DOM element for a single node.
    - It sets up event handlers for user interactions like selecting or toggling.
-******************************************************************************/
+  ******************************************************************************/
 
   function create_node ({
     base_path,
@@ -1095,12 +1150,17 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  5. MENUBAR AND SEARCH
-******************************************************************************/
+  MENUBAR AND SEARCH
+  ******************************************************************************/
   function render_menubar () {
     const search_button = document.createElement('button')
     search_button.textContent = 'Search'
     search_button.onclick = toggle_search_mode
+
+    const undo_button = document.createElement('button')
+    undo_button.textContent = `Undo (${undo_stack.length})`
+    undo_button.onclick = () => undo(1)
+    undo_button.disabled = undo_stack.length === 0
 
     const multi_select_button = document.createElement('button')
     multi_select_button.textContent = `Multi Select: ${multi_select_enabled}`
@@ -1122,7 +1182,7 @@ async function graph_explorer (opts, protocol) {
     recursive_collapse_button.textContent = `Recursive Collapse: ${recursive_collapse_flag}`
     recursive_collapse_button.onclick = toggle_recursive_collapse_flag
 
-    menubar.replaceChildren(search_button, multi_select_button, select_between_button, hubs_button, selection_button, recursive_collapse_button)
+    menubar.replaceChildren(search_button, undo_button, multi_select_button, select_between_button, hubs_button, selection_button, recursive_collapse_button)
   }
 
   function render_searchbar () {
@@ -1457,7 +1517,7 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  6. VIEW MANIPULATION & USER ACTIONS
+  VIEW MANIPULATION & USER ACTIONS
       - These functions handle user interactions like selecting, confirming,
         toggling, and resetting the graph.
   ******************************************************************************/
@@ -2000,10 +2060,10 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  7. VIRTUAL SCROLLING
+  VIRTUAL SCROLLING
     - These functions implement virtual scrolling to handle large graphs
       efficiently using an IntersectionObserver.
-******************************************************************************/
+  ******************************************************************************/
   function onscroll () {
     if (scroll_update_pending) return
     scroll_update_pending = true
@@ -2105,7 +2165,7 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  8. ENTRY DUPLICATION PREVENTION
+  ENTRY DUPLICATION PREVENTION
   ******************************************************************************/
 
   function collect_all_duplicate_entries () {
@@ -2503,7 +2563,7 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  9. HELPER FUNCTIONS
+  HELPER FUNCTIONS
   ******************************************************************************/
   function get_highlighted_name (name, query) {
   // Creates a new regular expression.
@@ -2547,6 +2607,10 @@ async function graph_explorer (opts, protocol) {
     }
     if (drive_updated_by_last_clicked) {
       drive_updated_by_last_clicked = false
+      return true
+    }
+    if (drive_updated_by_undo) {
+      drive_updated_by_undo = false
       return true
     }
     console.log('[SEARCH DEBUG] No feedback flags set, allowing onbatch')
@@ -2673,7 +2737,7 @@ async function graph_explorer (opts, protocol) {
   }
 
   /******************************************************************************
-  9. KEYBOARD NAVIGATION
+  KEYBOARD NAVIGATION
     - Handles keyboard-based navigation for the graph explorer
     - Navigate up/down around last_clicked node
   ******************************************************************************/
@@ -2846,15 +2910,58 @@ async function graph_explorer (opts, protocol) {
       cycle_to_next_duplicate(base_path, current_instance_path)
     }
   }
+
+  /******************************************************************************
+  UNDO FUNCTIONALITY
+    - Implements undo functionality to revert drive state changes
+  ******************************************************************************/
+  async function undo (steps = 1) {
+    if (undo_stack.length === 0) {
+      console.warn('No actions to undo')
+      return
+    }
+
+    const actions_to_undo = Math.min(steps, undo_stack.length)
+    console.log(`Undoing ${actions_to_undo} action(s)`)
+
+    // Pop the specified number of actions from the stack
+    const snapshots_to_restore = []
+    for (let i = 0; i < actions_to_undo; i++) {
+      const snapshot = undo_stack.pop()
+      if (snapshot) snapshots_to_restore.push(snapshot)
+    }
+
+    // Restore the last snapshot's state
+    if (snapshots_to_restore.length > 0) {
+      const snapshot = snapshots_to_restore[snapshots_to_restore.length - 1]
+
+      try {
+        // Restore the state WITHOUT setting drive_updated_by_undo flag
+        // This allows onbatch to process the change and update the UI
+        await drive.put(`${snapshot.type}.json`, snapshot.value)
+
+        // Update the undo stack in drive (with flag to prevent tracking this update)
+        // drive_updated_by_undo = true
+        await drive.put('undo/stack.json', JSON.stringify(undo_stack))
+
+        console.log(`Undo completed: restored ${snapshot.type} to previous state`)
+
+        // Re-render menubar to update undo button count
+        render_menubar()
+      } catch (e) {
+        console.error('Failed to undo action:', e)
+      }
+    }
+  }
 }
 
 /******************************************************************************
-  10. FALLBACK CONFIGURATION
+  FALLBACK CONFIGURATION
     - This provides the default data and API configuration for the component,
       following the pattern described in `instructions.md`.
     - It defines the default datasets (`entries`, `style`, `runtime`) and their
       initial values.
-******************************************************************************/
+  ******************************************************************************/
 function fallback_module () {
   return {
     api: fallback_instance
@@ -2906,6 +3013,9 @@ function fallback_module () {
               'Alt+j': 'jump_to_next_duplicate'
             })
           }
+        },
+        'undo/': {
+          'stack.json': { raw: '[]' }
         }
       }
     }
@@ -2934,26 +3044,26 @@ function graphdb (entries) {
 
   return api
 
-   function get (path) {
+  function get (path) {
     return entries[path] || null
   }
 
-   function has (path) {
+  function has (path) {
     return path in entries
   }
-   function keys () {
+  function keys () {
     return Object.keys(entries)
   }
 
-   function isEmpty () {
+  function isEmpty () {
     return Object.keys(entries).length === 0
   }
 
-   function root () {
+  function root () {
     return entries['/'] || null
   }
 
-   function raw () {
+  function raw () {
     return entries
   }
 }
@@ -3068,7 +3178,8 @@ function fallback_module () {
           runtime: 'runtime',
           mode: 'mode',
           flags: 'flags',
-          keybinds: 'keybinds'
+          keybinds: 'keybinds',
+          undo: 'undo'
         }
       }
     },
@@ -3079,7 +3190,8 @@ function fallback_module () {
       'runtime/': {},
       'mode/': {},
       'flags/': {},
-      'keybinds/': {}
+      'keybinds/': {},
+      'undo/': {}
     }
   }
 }
