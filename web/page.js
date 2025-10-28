@@ -1,4 +1,5 @@
 const STATE = require('../lib/STATE')
+const graphdb = require('../lib/graphdb')
 const statedb = STATE(__filename)
 const admin_api = statedb.admin()
 admin_api.on(event => {
@@ -36,11 +37,18 @@ async function boot (opts) {
   // ID + JSON STATE
   // ----------------------------------------
   const on = {
-    theme: inject
+    theme: inject,
+    entries: on_entries
   }
   const { drive } = sdb
 
-  const subs = await sdb.watch(onbatch, on)
+  // Database instance for Graph Explorer
+  let db = null
+  // Send function for Graph Explorer protocol
+  let send_to_graph_explorer = null
+
+  const subs = await sdb.watch(onbatch)
+  console.log(subs)
 
   // ----------------------------------------
   // TEMPLATE
@@ -53,12 +61,82 @@ async function boot (opts) {
   // ELEMENTS
   // ----------------------------------------
   // desktop
-  shadow.append(await app(subs[0]))
+  shadow.append(await app(subs[0], graph_explorer_protocol))
   // ----------------------------------------
   // INIT
   // ----------------------------------------
 
+  function graph_explorer_protocol (send) {
+    send_to_graph_explorer = send
+    return on_graph_explorer_message
+
+    function on_graph_explorer_message ({ type, data }) {
+      if (type === 'db_init') {
+        db = graphdb(data)
+        // Send back confirmation with the entries
+        send({ type: 'db_initialized', data: { entries: data } })
+      } else if (type === 'db_request') {
+        handle_db_request(data, send)
+      }
+    }
+
+    function handle_db_request (data, send) {
+      const { id, operation, params } = data
+      let result
+
+      if (!db) {
+        console.error('[page.js] Database not initialized yet')
+        send({ type: 'db_response', data: { id, result: null } })
+        return
+      }
+
+      if (operation === 'db_get') {
+        result = db.get(params.path)
+      } else if (operation === 'db_has') {
+        result = db.has(params.path)
+      } else if (operation === 'db_is_empty') {
+        result = db.is_empty()
+      } else if (operation === 'db_root') {
+        result = db.root()
+      } else if (operation === 'db_keys') {
+        result = db.keys()
+      } else if (operation === 'db_raw') {
+        result = db.raw()
+      } else {
+        console.warn('[page.js] Unknown db operation:', operation)
+        result = null
+      }
+
+      send({ type: 'db_response', data: { id, result } })
+    }
+  }
+
+  function on_entries (data) {
+    if (!data || data[0] == null) {
+      console.error('Entries data is missing or empty.')
+      db = graphdb({})
+      if (send_to_graph_explorer) {
+        send_to_graph_explorer({ type: 'db_initialized', data: { entries: {} } })
+      }
+      return
+    }
+    const parsed_data = typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
+    if (typeof parsed_data !== 'object' || !parsed_data) {
+      console.error('Parsed entries data is not a valid object.')
+      db = graphdb({})
+      if (send_to_graph_explorer) {
+        send_to_graph_explorer({ type: 'db_initialized', data: { entries: {} } })
+      }
+      return
+    }
+    db = graphdb(parsed_data)
+    if (send_to_graph_explorer) {
+      send_to_graph_explorer({ type: 'db_initialized', data: { entries: parsed_data } })
+    }
+  }
+
   async function onbatch (batch) {
+    console.log(batch)
     for (const { type, paths } of batch) {
       const data = await Promise.all(
         paths.map(path => drive.get(path).then(file => file.raw))
@@ -79,19 +157,19 @@ function fallback_module () {
         0: '',
         mapping: {
           style: 'theme',
-          entries: 'entries',
           runtime: 'runtime',
           mode: 'mode',
           flags: 'flags',
           keybinds: 'keybinds',
           undo: 'undo'
         }
-      }
+      },
+      '../lib/graphdb': 0
     },
     drive: {
       'theme/': { 'style.css': { raw: "body { font-family: 'system-ui'; }" } },
+      'entries/': { 'entries.json': { $ref: 'entries.json' } },
       'lang/': {},
-      'entries/': {},
       'runtime/': {},
       'mode/': {},
       'flags/': {},
