@@ -46,6 +46,12 @@ async function boot (opts) {
   let db = null
   // Send function for Graph Explorer protocol
   let send_to_graph_explorer = null
+  // Message ID counter for page_js -> graph_explorer messages
+  let page_js_mid = 0
+
+  // Permissions structure (placeholder)
+  // Example: perms = { graph_explorer: { deny_list: ['db_raw'] } }
+  // const perms = {}
 
   const subs = await sdb.watch(onbatch)
   console.log(subs)
@@ -70,25 +76,30 @@ async function boot (opts) {
     send_to_graph_explorer = send
     return on_graph_explorer_message
 
-    function on_graph_explorer_message ({ type, data }) {
-      if (type === 'db_init') {
-        db = graphdb(data)
-        // Send back confirmation with the entries
-        send({ type: 'db_initialized', data: { entries: data } })
-      } else if (type === 'db_request') {
-        handle_db_request(data, send)
+    function on_graph_explorer_message (msg) {
+      const { type } = msg
+
+      if (type.startsWith('db_')) {
+        handle_db_request(msg, send)
       }
     }
 
-    function handle_db_request (data, send) {
-      const { id, operation, params } = data
+    function handle_db_request (request_msg, send) {
+      const { head: request_head, type: operation, data: params } = request_msg
       let result
 
       if (!db) {
         console.error('[page.js] Database not initialized yet')
-        send({ type: 'db_response', data: { id, result: null } })
+        send_response(request_head, null)
         return
       }
+
+      // TODO: Check permissions here
+      // if (perms.graph_explorer?.deny_list?.includes(operation)) {
+      //   console.warn('[page.js] Operation denied by permissions:', operation)
+      //   send_response(request_head, null)
+      //   return
+      // }
 
       if (operation === 'db_get') {
         result = db.get(params.path)
@@ -107,7 +118,18 @@ async function boot (opts) {
         result = null
       }
 
-      send({ type: 'db_response', data: { id, result } })
+      send_response(request_head, result)
+
+      function send_response (request_head, result) {
+        // Create standardized response message
+        const response_head = ['page_js', 'graph_explorer', page_js_mid++]
+        send({
+          head: response_head,
+          refs: { cause: request_head }, // Reference the original request
+          type: 'db_response',
+          data: { result }
+        })
+      }
     }
   }
 
