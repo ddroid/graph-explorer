@@ -7,10 +7,8 @@
     "lib": "lib"
   },
   "scripts": {
-    "start": "budo web/boot.js:bundle.js --open --live",
-    "build": "browserify web/boot.js -o bundle.js",
-    "start:act": "budo web/boot.js:bundle.js  --dir ./ --live --open",
-    "build:act": "browserify web/boot.js > bundle.js",
+    "start": "budo web/page.js:bundle.js --dir . --live --open -- -i STATE",
+    "build": "browserify web/page.js -i STATE -o bundle.js",
     "lint": "standardx",
     "lint:fix": "standardx --fix"
   },

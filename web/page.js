@@ -1,5 +1,4 @@
-const STATE = require('../lib/STATE')
-const graphdb = require('../lib/graphdb')
+const STATE = require('STATE')
 const statedb = STATE(__filename)
 const admin_api = statedb.admin()
 admin_api.on(event => {
@@ -7,12 +6,13 @@ admin_api.on(event => {
 })
 const { sdb } = statedb(fallback_module)
 
+const graphdb = require('../lib/graphdb')
 /******************************************************************************
   PAGE
 ******************************************************************************/
 const app = require('..')
 const sheet = new CSSStyleSheet()
-config().then(() => boot({ sid: '' }))
+config().then(boot)
 
 async function config () {
   const html = document.documentElement
@@ -32,7 +32,7 @@ async function config () {
 /******************************************************************************
   PAGE BOOT
 ******************************************************************************/
-async function boot (opts) {
+async function boot () {
   // ----------------------------------------
   // ID + JSON STATE
   // ----------------------------------------
@@ -52,7 +52,6 @@ async function boot (opts) {
   // Permissions structure (placeholder)
   // Example: perms = { graph_explorer: { deny_list: ['db_raw'] } }
   // const perms = {}
-
   const subs = await sdb.watch(onbatch)
   console.log(subs)
 
