@@ -1,8 +1,6 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
-
-},{}],2:[function(require,module,exports){
 (function (__filename){(function (){
-const STATE = require('./STATE')
+const STATE = require('STATE')
 const statedb = STATE(__filename)
 const { get } = statedb(fallback_module)
 
@@ -3136,7 +3134,7 @@ function fallback_module () {
 }
 
 }).call(this)}).call(this,"/lib/graph_explorer.js")
-},{"./STATE":1}],3:[function(require,module,exports){
+},{"STATE":3}],2:[function(require,module,exports){
 module.exports = graphdb
 
 function graphdb (entries) {
@@ -3181,33 +3179,11 @@ function graphdb (entries) {
   }
 }
 
+},{}],3:[function(require,module,exports){
+
 },{}],4:[function(require,module,exports){
-const prefix = 'https://raw.githubusercontent.com/alyhxn/playproject/main/'
-const init_url = location.hash === '#dev' ? 'web/init.js' : prefix + 'src/node_modules/init.js'
-const args = arguments
-
-const has_save = location.hash.includes('#save')
-const fetch_opts = has_save ? {} : { cache: 'no-store' }
-
-if (!has_save) {
-  localStorage.clear()
-}
-
-fetch(init_url, fetch_opts)
-  .then(res => res.text())
-  .then(async source => {
-    const module = { exports: {} }
-    const f = new Function('module', 'require', source)
-    f(module, require)
-    const init = module.exports
-    await init(args, prefix)
-    require('./page') // or whatever is otherwise the main entry of our project
-  })
-
-},{"./page":5}],5:[function(require,module,exports){
 (function (__filename){(function (){
-const STATE = require('../lib/STATE')
-const graphdb = require('../lib/graphdb')
+const STATE = require('STATE')
 const statedb = STATE(__filename)
 const admin_api = statedb.admin()
 admin_api.on(event => {
@@ -3215,12 +3191,13 @@ admin_api.on(event => {
 })
 const { sdb } = statedb(fallback_module)
 
+const graphdb = require('../lib/graphdb')
 /******************************************************************************
   PAGE
 ******************************************************************************/
 const app = require('..')
 const sheet = new CSSStyleSheet()
-config().then(() => boot({ sid: '' }))
+config().then(boot)
 
 async function config () {
   const html = document.documentElement
@@ -3240,7 +3217,7 @@ async function config () {
 /******************************************************************************
   PAGE BOOT
 ******************************************************************************/
-async function boot (opts) {
+async function boot () {
   // ----------------------------------------
   // ID + JSON STATE
   // ----------------------------------------
@@ -3260,7 +3237,6 @@ async function boot (opts) {
   // Permissions structure (placeholder)
   // Example: perms = { graph_explorer: { deny_list: ['db_raw'] } }
   // const perms = {}
-
   const subs = await sdb.watch(onbatch)
   console.log(subs)
 
@@ -3410,4 +3386,4 @@ function fallback_module () {
 }
 
 }).call(this)}).call(this,"/web/page.js")
-},{"..":2,"../lib/STATE":1,"../lib/graphdb":3}]},{},[4]);
+},{"..":1,"../lib/graphdb":2,"STATE":3}]},{},[4]);
