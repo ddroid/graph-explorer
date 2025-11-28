@@ -22,7 +22,7 @@ const graph = await graph_explorer(opts, protocol)
 // Append the element to your application's body or another container
 document.body.appendChild(graph)
 ```
-
+For detailed usage instructions, see [USAGE.md](./guide/USAGE.md).
 
 ## Protocol System
 
@@ -40,7 +40,7 @@ All messages follow the standard format:
 }
 ```
 
-For complete protocol documentation, see [PROTOCOL.md](./PROTOCOL.md).
+For complete protocol documentation, see [PROTOCOL.md](./guide/PROTOCOL.md).
 
 ## Data Flow
 
@@ -56,15 +56,15 @@ The graph explorer uses a drive-based data system for efficient data management:
 
 ### Data Integration Pattern
 
-The recommended approach is to use the `graph_explorer_wrapper` which handles:
+The recommended approach is to use the `graph_explorer` which handles:
 - Drive data watching and processing
 - Protocol communication setup
 - Database initialization
 - Message routing between parent and graph explorer
 
 ```javascript
-const graph_explorer_wrapper = require('graph_explorer_wrapper')
-const graph = await graph_explorer_wrapper(opts, protocol)
+const graph_explorer = require('graph-explorer')
+const graph = await graph_explorer(opts, protocol)
 ```
 
 ### 1. `entries`
