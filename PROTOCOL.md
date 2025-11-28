@@ -1,6 +1,6 @@
 # Graph Explorer Protocol System
 
-The `graph_explorer` module implements a bidirectional message-based communication protocol that allows parent modules to control the graph explorer and receive notifications after the requested message was processed.
+The `graph_explorer` module implements a standard bidirectional message-based communication protocol that allows parent modules to control the graph explorer and receive notifications after the requested message was processed.
 
 ## Usage
 
@@ -8,7 +8,7 @@ When initializing the graph explorer, pass a protocol function as the second par
 
 ```javascript
 const _ = {} // Store the send function to communicate with graph_explorer
-const graph_explorer = require('./lib/graph_explorer.js')
+const graph_explorer = require('graph-explorer')
 
 const element = await graph_explorer(opts, protocol)
 
@@ -19,7 +19,8 @@ function protocol (send) {
   // Return a message handler function
   return onmessage
   
-  function onmessage ({ type, data }) {
+  function onmessage (msg) {
+    const { head, refs, type, data } = msg
     // Handle messages from graph_explorer
     switch (type) {
       case 'node_clicked':
@@ -34,6 +35,24 @@ function protocol (send) {
 }
 ```
 
+## Message Structure
+
+All messages follow the standard protocol format:
+
+```javascript
+{
+  head: [sender_id, receiver_id, message_id],
+  refs: { cause: parent_message_head },
+  type: "message_type",
+  data: { ... }
+}
+```
+
+- `head`: `[from, to, id]` - Unique message identifier
+- `refs`: reference to cause (empty `{}` for user events)
+- `type`: Message type string
+- `data`: Message payload
+
 ## Incoming Messages (Parent → Graph Explorer)
 
 These messages can be sent to the graph explorer to control its behavior:
@@ -46,7 +65,12 @@ Change the current display mode.
 
 **Example:**
 ```javascript
-graph_send({ type: 'set_mode', data: { mode: 'search' }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'set_mode', 
+  data: { mode: 'search' }
+})
 ```
 
 ### `set_search_query`
@@ -57,7 +81,12 @@ Set the search query (automatically switches to search mode if not already).
 
 **Example:**
 ```javascript
-graph_send({ type: 'set_search_query', data: { query: 'my search' }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'set_search_query', 
+  data: { query: 'my search' }
+})
 ```
 
 ### `select_nodes`
@@ -68,7 +97,12 @@ Programmatically select specific nodes.
 
 **Example:**
 ```javascript
-graph_send({ type: 'select_nodes', data: { instance_paths: ['|/', '|/src'] }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'select_nodes', 
+  data: { instance_paths: ['|/', '|/src'] }
+})
 ```
 
 ### `expand_node`
@@ -81,7 +115,12 @@ Expand a specific node's children and/or hubs.
 
 **Example:**
 ```javascript
-graph_send({ type: 'expand_node', data: { instance_path: '|/', expand_subs: true, expand_hubs: true }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'expand_node', 
+  data: { instance_path: '|/', expand_subs: true, expand_hubs: true }
+})
 ```
 
 ### `collapse_node`
@@ -92,7 +131,12 @@ Collapse a specific node's children and hubs.
 
 **Example:**
 ```javascript
-graph_send({ type: 'collapse_node', data: { instance_path: '|/src' }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'collapse_node', 
+  data: { instance_path: '|/src' }
+})
 ```
 
 ### `toggle_node`
@@ -104,7 +148,12 @@ Toggle expansion state of a node.
 
 **Example:**
 ```javascript
-graph_send({ type: 'toggle_node', data: { instance_path: '|/src', toggle_type: 'subs' }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'toggle_node', 
+  data: { instance_path: '|/src', toggle_type: 'subs' }
+})
 ```
 
 ### `get_selected`
@@ -116,7 +165,12 @@ Request the current selection state.
 
 **Example:**
 ```javascript
-graph_send({ type: 'get_selected', data: {}})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'get_selected', 
+  data: {}
+})
 ```
 
 ### `get_confirmed`
@@ -128,7 +182,12 @@ Request the current confirmed selection state.
 
 **Example:**
 ```javascript
-graph_send({ type: 'get_confirmed', data: {}})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'get_confirmed', 
+  data: {}
+})
 ```
 
 ### `clear_selection`
@@ -138,7 +197,12 @@ Clear all selected and confirmed nodes.
 
 **Example:**
 ```javascript
-graph_send({ type: 'clear_selection', data: {}})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'clear_selection', 
+  data: {}
+})
 ```
 
 ### `set_flag`
@@ -153,7 +217,12 @@ Set a configuration flag.
 
 **Example:**
 ```javascript
-graph_send({ type: 'set_flag', data: { flag_type: 'hubs', value: 'true' }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'set_flag', 
+  data: { flag_type: 'hubs', value: 'true' }
+})
 ```
 
 ### `scroll_to_node`
@@ -164,12 +233,17 @@ Scroll to a specific node in the view.
 
 **Example:**
 ```javascript
-graph_send({ type: 'scroll_to_node', data: { instance_path: '|/src/index.js' }})
+graph_send({ 
+  head: [by, to, mid++], 
+  refs: {}, 
+  type: 'scroll_to_node', 
+  data: { instance_path: '|/src/index.js' }
+})
 ```
 
 ## Outgoing Messages (Graph Explorer → Parent)
 
-These messages are sent by the graph explorer to notify the parent module of events:
+These messages are sent by the graph explorer to notify the parent module of events. They follow the same standard protocol format:
 
 ### `node_clicked`
 Fired when a node is clicked.

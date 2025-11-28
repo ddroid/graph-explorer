@@ -6,13 +6,15 @@ A lightweight, high-performance frontend component for rendering and exploring i
 
 - **Virtual Scrolling:** Renders only the visible nodes, ensuring smooth scrolling and interaction even with very large graphs.
 - **Interactive Exploration:** Allows users to expand and collapse both hierarchical children (`subs`) and related connections (`hubs`).
-- **Dynamic Data Loading:** Listens for data updates and re-renders the view accordingly.
-## Usage
+- **Standard Protocol:** Implements the standard bidirectional message-based communication protocol for seamless integration.
+- **Drive-based Data Flow:** Uses the drive system for efficient data management and real-time updates.
 
-Require the `graph_explorer` function and call it with a configuration object. It returns a DOM element that can be appended to the page.
+## Quick Start
+
+The graph explorer requires data to be supplied through a drive system and communicates via the standard protocol:
 
 ```javascript
-const graph_explorer = require('./graph_explorer.js')
+const graph_explorer = require('graph-explorer')
 
 // Provide `opts` and optional `protocol` as parameters
 const graph = await graph_explorer(opts, protocol)
@@ -21,21 +23,53 @@ const graph = await graph_explorer(opts, protocol)
 document.body.appendChild(graph)
 ```
 
-### Protocol System
 
-The graph explorer supports bidirectional message-based communication through an optional protocol parameter. This allows parent modules to:
+## Protocol System
+
+The graph explorer implements the **standard bidirectional message-based communication protocol** that allows parent modules to:
 - Control the graph explorer programmatically (change modes, select nodes, expand/collapse, etc.)
 - Receive notifications about user interactions and state changes
 
+All messages follow the standard format:
+```javascript
+{
+  head: [sender_id, receiver_id, message_id],
+  refs: { cause: parent_message_head },
+  type: "message_type",
+  data: { ... }
+}
+```
+
 For complete protocol documentation, see [PROTOCOL.md](./PROTOCOL.md).
 
-## Drive
+## Data Flow
 
-The component expects to receive data through datasets in drive. It responds to two types of messages: `entries` and `style`.
+The graph explorer uses a drive-based data system for efficient data management:
+
+### Required Drive Datasets
+
+1. **`entries/entries.json`** - Core graph data (see format below)
+2. **`theme/style.css`** - CSS styles for the component
+3. **`mode/`** - Current mode and search state
+4. **`flags/`** - Configuration flags
+5. **`keybinds/`** - Keyboard navigation bindings
+
+### Data Integration Pattern
+
+The recommended approach is to use the `graph_explorer_wrapper` which handles:
+- Drive data watching and processing
+- Protocol communication setup
+- Database initialization
+- Message routing between parent and graph explorer
+
+```javascript
+const graph_explorer_wrapper = require('graph_explorer_wrapper')
+const graph = await graph_explorer_wrapper(opts, protocol)
+```
 
 ### 1. `entries`
 
-The `entries` message provides the core graph data. It should be an object where each key is a unique path identifier for a node, and the value is an object describing that node's properties.
+The `entries` dataset provides the core graph data. It should be stored in `entries/entries.json` as an object where each key is a unique path identifier for a node, and the value is an object describing that node's properties.
 
 **Example `entries` Object:**
 
@@ -83,9 +117,9 @@ The `entries` message provides the core graph data. It should be an object where
 - `subs` (Array<String>): An array of paths to child nodes. An empty array indicates no children.
 - `hubs` (Array<String>): An array of paths to related, non-hierarchical nodes.
 
-### 2. `style`
+### 2. `theme`
 
-The `style` message provides a string of CSS content that will be injected directly into the component's Shadow DOM. This allows for full control over the visual appearance of the graph, nodes, icons, and tree lines.
+The `theme` dataset provides CSS styles and should be stored in `theme/style.css`. The styles are injected directly into the component's Shadow DOM for full visual control.
 
 **Example `style` Data:**
 
