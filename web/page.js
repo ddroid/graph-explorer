@@ -4,9 +4,10 @@ const admin_api = statedb.admin()
 admin_api.on(event => {
   // console.log(event)
 })
-const { sdb } = statedb(fallback_module)
+const { id, sdb } = statedb(fallback_module)
 
 const graphdb = require('../lib/graphdb')
+const net = require('../lib/net_helper')
 /******************************************************************************
   PAGE
 ******************************************************************************/
@@ -44,10 +45,12 @@ async function boot () {
 
   // Database instance for Graph Explorer
   let db = null
-  // Send function for Graph Explorer protocol
-  let send_to_graph_explorer = null
-  // Message ID counter for page_js -> graph_explorer messages
-  let page_js_mid = 0
+  let latest_entries = null
+  let graph_explorer_connected = false
+  const { io, _ } = net(id)
+  io.on = {
+    graph_explorer: graph_explorer_protocol
+  }
 
   // Permissions structure (placeholder)
   // Example: perms = { graph_explorer: { deny_list: ['db_raw'] } }
@@ -66,24 +69,22 @@ async function boot () {
   // ELEMENTS
   // ----------------------------------------
   // desktop
-  shadow.append(await app(subs[0], graph_explorer_protocol))
+  const graph_explorer_el = await app(subs[0], io.invite('graph_explorer', { up: id }))
+  graph_explorer_connected = true
+  sync_initial_state_to_child()
+  shadow.append(graph_explorer_el)
   // ----------------------------------------
   // INIT
   // ----------------------------------------
 
-  function graph_explorer_protocol (send) {
-    send_to_graph_explorer = send
-    return on_graph_explorer_message
+  function graph_explorer_protocol (msg) {
+    const { type } = msg
 
-    function on_graph_explorer_message (msg) {
-      const { type } = msg
-
-      if (type.startsWith('db_')) {
-        handle_db_request(msg, send)
-      }
+    if (type.startsWith('db_')) {
+      handle_db_request(msg)
     }
 
-    function handle_db_request (request_msg, send) {
+    function handle_db_request (request_msg) {
       const { head: request_head, type: operation, data: params } = request_msg
       let result
 
@@ -120,14 +121,7 @@ async function boot () {
       send_response(request_head, result)
 
       function send_response (request_head, result) {
-        // Create standardized response message
-        const response_head = ['page_js', 'graph_explorer', page_js_mid++]
-        send({
-          head: response_head,
-          refs: { cause: request_head }, // Reference the original request
-          type: 'db_response',
-          data: { result }
-        })
+        _.graph_explorer('db_response', { cause: request_head }, { result })
       }
     }
   }
@@ -136,24 +130,30 @@ async function boot () {
     if (!data || data[0] == null) {
       console.error('Entries data is missing or empty.')
       db = graphdb({})
-      if (send_to_graph_explorer) {
-        send_to_graph_explorer({ type: 'db_initialized', data: { entries: {} } })
-      }
+      latest_entries = {}
+      notify_db_initialized({})
       return
     }
     const parsed_data = typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
     if (typeof parsed_data !== 'object' || !parsed_data) {
       console.error('Parsed entries data is not a valid object.')
       db = graphdb({})
-      if (send_to_graph_explorer) {
-        send_to_graph_explorer({ type: 'db_initialized', data: { entries: {} } })
-      }
+      latest_entries = {}
+      notify_db_initialized({})
       return
     }
     db = graphdb(parsed_data)
-    if (send_to_graph_explorer) {
-      send_to_graph_explorer({ type: 'db_initialized', data: { entries: parsed_data } })
-    }
+    latest_entries = parsed_data
+    notify_db_initialized(parsed_data)
+  }
+
+  function notify_db_initialized (entries) {
+    if (!graph_explorer_connected) return
+    _.graph_explorer('db_initialized', {}, { entries })
+  }
+
+  function sync_initial_state_to_child () {
+    if (latest_entries !== null) notify_db_initialized(latest_entries)
   }
 
   async function onbatch (batch) {
@@ -185,7 +185,8 @@ function fallback_module () {
           undo: 'undo'
         }
       },
-      '../lib/graphdb': 0
+      '../lib/graphdb': 0,
+      '../lib/net_helper': { $: '' }
     },
     drive: {
       'theme/': { 'style.css': { raw: "body { font-family: 'system-ui'; }" } },
