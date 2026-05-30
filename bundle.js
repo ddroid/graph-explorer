@@ -3,17 +3,18 @@
 const STATE = require('STATE')
 const statedb = STATE(__filename)
 const { get } = statedb(fallback_module)
+const net = require('./net_helper')
 
 module.exports = graph_explorer
 
-async function graph_explorer (opts, protocol) {
+async function graph_explorer (opts, invite) {
   /******************************************************************************
   COMPONENT INITIALIZATION
     - This sets up the initial state, variables, and the basic DOM structure.
     - It also initializes the IntersectionObserver for virtual scrolling and
       sets up the watcher for state changes.
   ******************************************************************************/
-  const { sdb } = await get(opts.sid)
+  const { id, sdb } = await get(opts.sid)
   const { drive } = sdb
 
   let vertical_scroll_value = 0
@@ -55,12 +56,12 @@ async function graph_explorer (opts, protocol) {
   let keybinds = {} // Store keyboard navigation bindings
   let undo_stack = [] // Stack to track drive state changes for undo functionality
 
-  // Protocol system for message-based communication
-  let send = null
-  let graph_explorer_mid = 0 // Message ID counter for graph_explorer.js -> page.js messages
-  if (protocol) {
-    send = protocol(msg => onmessage(msg))
+  const { io, _ } = net(id)
+  io.on = {
+    up: onmessage
   }
+  if (!invite) throw new Error('graph_explorer requires a net_helper invite')
+  io.accept(invite)
 
   // Create db object that communicates via protocol messages
   db = create_db()
@@ -116,7 +117,7 @@ async function graph_explorer (opts, protocol) {
   /******************************************************************************
   ESSAGE HANDLING
     - Handles incoming messages and sends outgoing messages.
-    - Messages follow standardized format: { head: [by, to, mid], refs, type, data }
+    - Messages follow standardized net_helper format: { head, refs, type, data, meta }
   ******************************************************************************/
   function onmessage (msg) {
     const { type, data } = msg
@@ -148,7 +149,7 @@ async function graph_explorer (opts, protocol) {
       const { mode: new_mode } = data
       if (new_mode && ['default', 'menubar', 'search'].includes(new_mode)) {
         update_drive_state({ type: 'mode/current_mode', message: new_mode })
-        send_message({ type: 'mode_changed', data: { mode: new_mode } })
+        send_message({ type: 'mode_changed', refs: { cause: msg.head }, data: { mode: new_mode } })
       }
     }
 
@@ -159,7 +160,7 @@ async function graph_explorer (opts, protocol) {
         drive_updated_by_search = true
         update_drive_state({ type: 'mode/search_query', message: query })
         if (mode === 'search') perform_search(query)
-        send_message({ type: 'search_query_changed', data: { query } })
+        send_message({ type: 'search_query_changed', refs: { cause: msg.head }, data: { query } })
       }
     }
 
@@ -167,7 +168,7 @@ async function graph_explorer (opts, protocol) {
       const { instance_paths } = data
       if (Array.isArray(instance_paths)) {
         update_drive_state({ type: 'runtime/selected_instance_paths', message: instance_paths })
-        send_message({ type: 'selection_changed', data: { selected: instance_paths } })
+        send_message({ type: 'selection_changed', refs: { cause: msg.head }, data: { selected: instance_paths } })
       }
     }
 
@@ -178,7 +179,7 @@ async function graph_explorer (opts, protocol) {
         instance_states[instance_path].expanded_hubs = expand_hubs
         drive_updated_by_toggle = true
         update_drive_state({ type: 'runtime/instance_states', message: instance_states })
-        send_message({ type: 'node_expanded', data: { instance_path, expand_subs, expand_hubs } })
+        send_message({ type: 'node_expanded', refs: { cause: msg.head }, data: { instance_path, expand_subs, expand_hubs } })
       }
     }
 
@@ -189,7 +190,7 @@ async function graph_explorer (opts, protocol) {
         instance_states[instance_path].expanded_hubs = false
         drive_updated_by_toggle = true
         update_drive_state({ type: 'runtime/instance_states', message: instance_states })
-        send_message({ type: 'node_collapsed', data: { instance_path } })
+        send_message({ type: 'node_collapsed', refs: { cause: msg.head }, data: { instance_path } })
       }
     }
 
@@ -201,22 +202,22 @@ async function graph_explorer (opts, protocol) {
         } else if (toggle_type === 'hubs') {
           await toggle_hubs(instance_path)
         }
-        send_message({ type: 'node_toggled', data: { instance_path, toggle_type } })
+        send_message({ type: 'node_toggled', refs: { cause: msg.head }, data: { instance_path, toggle_type } })
       }
     }
 
     function handle_get_selected (data) {
-      send_message({ type: 'selected_nodes', data: { selected: selected_instance_paths } })
+      send_message({ type: 'selected_nodes', refs: { cause: msg.head }, data: { selected: selected_instance_paths } })
     }
 
     function handle_get_confirmed (data) {
-      send_message({ type: 'confirmed_nodes', data: { confirmed: confirmed_instance_paths } })
+      send_message({ type: 'confirmed_nodes', refs: { cause: msg.head }, data: { confirmed: confirmed_instance_paths } })
     }
 
     function handle_clear_selection (data) {
       update_drive_state({ type: 'runtime/selected_instance_paths', message: [] })
       update_drive_state({ type: 'runtime/confirmed_selected', message: [] })
-      send_message({ type: 'selection_cleared', data: {} })
+      send_message({ type: 'selection_cleared', refs: { cause: msg.head }, data: {} })
     }
 
     function handle_set_flag (data) {
@@ -228,7 +229,7 @@ async function graph_explorer (opts, protocol) {
       } else if (flag_type === 'recursive_collapse') {
         update_drive_state({ type: 'flags/recursive_collapse', message: value })
       }
-      send_message({ type: 'flag_changed', data: { flag_type, value } })
+      send_message({ type: 'flag_changed', refs: { cause: msg.head }, data: { flag_type, value } })
     }
 
     function handle_scroll_to_node (data) {
@@ -237,7 +238,7 @@ async function graph_explorer (opts, protocol) {
       if (node_index !== -1) {
         const scroll_position = node_index * node_height
         container.scrollTop = scroll_position
-        send_message({ type: 'scrolled_to_node', data: { instance_path, scroll_position } })
+        send_message({ type: 'scrolled_to_node', refs: { cause: msg.head }, data: { instance_path, scroll_position } })
       }
     }
   }
@@ -267,15 +268,14 @@ async function graph_explorer (opts, protocol) {
       if (container) container.replaceChildren()
     }
   }
-  function send_message (msg) {
-    if (send) {
-      send(msg)
-    }
+  function send_message ({ type, refs = {}, data = {} }) {
+    return _.up(type, refs, data)
   }
 
   function create_db () {
-    // Pending requests map: key is message head [by, to, mid], value is {resolve, reject}
+    // Pending requests map: key is net_helper message head, value is {resolve, reject}
     const pending_requests = new Map()
+    const early_responses = new Map()
 
     return {
       // All operations are async via protocol messages
@@ -297,23 +297,21 @@ async function graph_explorer (opts, protocol) {
           pending.resolve(msg.data.result)
           pending_requests.delete(request_head_key)
         } else {
-          console.warn('[graph_explorer] No pending request for response:', msg.refs.cause)
+          early_responses.set(request_head_key, msg)
         }
       }
     }
 
     function send_db_request (operation, params) {
       return new Promise((resolve, reject) => {
-        const head = ['graph_explorer', 'page_js', graph_explorer_mid++]
+        const head = send_message({ type: operation, refs: {}, data: params })
         const head_key = JSON.stringify(head)
         pending_requests.set(head_key, { resolve, reject })
-
-        send_message({
-          head,
-          refs: null, // New request has no references
-          type: operation,
-          data: params
-        })
+        const early_response = early_responses.get(head_key)
+        if (early_response) {
+          early_responses.delete(head_key)
+          db.handle_response(early_response)
+        }
       })
     }
   }
@@ -633,8 +631,8 @@ async function graph_explorer (opts, protocol) {
       return
     }
     const parsed_data = parse_json_data(data[0])
-    if (!Array.isArray(parsed_data)) {
-      console.error('Parsed undo stack data is not a valid array.')
+    if (typeof parsed_data !== 'object' || !parsed_data) {
+      console.error('Parsed undo stack data is not a valid Object.')
       return
     }
     undo_stack = parsed_data
@@ -3134,7 +3132,7 @@ function fallback_module () {
 }
 
 }).call(this)}).call(this,"/lib/graph_explorer.js")
-},{"STATE":3}],2:[function(require,module,exports){
+},{"./net_helper":3,"STATE":4}],2:[function(require,module,exports){
 module.exports = graphdb
 
 function graphdb (entries) {
@@ -3180,8 +3178,67 @@ function graphdb (entries) {
 }
 
 },{}],3:[function(require,module,exports){
+(function (__filename){(function (){
+module.exports = net
 
+function net (id) {
+  const [label, io, _, sub, hub] = [`[${id}@${__filename}]`, { invite, accept, on: {} }, {}, {}, {}]
+  return { io, _ }
+  function forward (to, M) {
+    if (to.startsWith(id)) {
+      const ups = [...new Set(Object.keys(hub).map(id => hub[id].tx))]
+      for (const tx of ups) tx(M)
+      return
+    }
+    for (const id of Object.keys(sub)) if (to.startsWith(id)) return sub[id].tx(M)
+    throw new Error(`${label} unknown recipient "${to}"`)
+  }
+  function invite (name, ids) {
+    if (!io.on[name]) throw new Error(`${label} no protocol handler for "${name}"`)
+    return Object.assign(invite, { ids })
+    function invite (tx) {
+      const rx = router(sub)
+      add(name, tx, tx.id, rx, sub)
+      return rx
+    }
+  }
+  function accept (invite) {
+    const rx = router(hub)
+    const tx = invite(Object.assign(rx, { id }))
+    for (const [name, to] of Object.entries(invite.ids)) {
+      if (hub[to]) throw new Error(`${label} already connected to "${to}"`)
+      if (!io.on[name]) throw new Error(`${label} no "${name}" protocol for "${to}"`)
+      add(name, tx, to, rx, hub)
+    }
+  }
+  function router ($) {
+    return function rx (M) {
+      const { head: [by, to] } = M
+      console.log(`[M]\n${by} \n to: \n ${to}`, M)
+      if (to !== id) return forward(to, M)
+      if (!$[by]) throw new Error(`${label} unknown sender "${by}"`)
+      const { name } = $[by].state
+      if (!io.on[name]) throw new Error(`${label} no "${name}" protocol for "${to}"`)
+      io.on[name](M)
+    }
+  }
+  function add (name, tx, to, rx, $) {
+    const state = { name, to, mid: 0 }
+    _[name] = send
+    $[to] = { rx, tx, state }
+    function send (type, refs = {}, data = null) {
+      const head = [id, to, state.mid++]
+      const meta = { time: Date.now(), stack: (new Error().stack) }
+      tx({ head, refs, type, data, meta })
+      return head
+    }
+  }
+}
+
+}).call(this)}).call(this,"/lib/net_helper/net_helper.js")
 },{}],4:[function(require,module,exports){
+
+},{}],5:[function(require,module,exports){
 (function (__filename){(function (){
 const STATE = require('STATE')
 const statedb = STATE(__filename)
@@ -3189,9 +3246,10 @@ const admin_api = statedb.admin()
 admin_api.on(event => {
   // console.log(event)
 })
-const { sdb } = statedb(fallback_module)
+const { id, sdb } = statedb(fallback_module)
 
 const graphdb = require('../lib/graphdb')
+const net = require('../lib/net_helper')
 /******************************************************************************
   PAGE
 ******************************************************************************/
@@ -3229,10 +3287,12 @@ async function boot () {
 
   // Database instance for Graph Explorer
   let db = null
-  // Send function for Graph Explorer protocol
-  let send_to_graph_explorer = null
-  // Message ID counter for page_js -> graph_explorer messages
-  let page_js_mid = 0
+  let latest_entries = null
+  let graph_explorer_connected = false
+  const { io, _ } = net(id)
+  io.on = {
+    graph_explorer: graph_explorer_protocol
+  }
 
   // Permissions structure (placeholder)
   // Example: perms = { graph_explorer: { deny_list: ['db_raw'] } }
@@ -3251,24 +3311,22 @@ async function boot () {
   // ELEMENTS
   // ----------------------------------------
   // desktop
-  shadow.append(await app(subs[0], graph_explorer_protocol))
+  const graph_explorer_el = await app(subs[0], io.invite('graph_explorer', { up: id }))
+  graph_explorer_connected = true
+  sync_initial_state_to_child()
+  shadow.append(graph_explorer_el)
   // ----------------------------------------
   // INIT
   // ----------------------------------------
 
-  function graph_explorer_protocol (send) {
-    send_to_graph_explorer = send
-    return on_graph_explorer_message
+  function graph_explorer_protocol (msg) {
+    const { type } = msg
 
-    function on_graph_explorer_message (msg) {
-      const { type } = msg
-
-      if (type.startsWith('db_')) {
-        handle_db_request(msg, send)
-      }
+    if (type.startsWith('db_')) {
+      handle_db_request(msg)
     }
 
-    function handle_db_request (request_msg, send) {
+    function handle_db_request (request_msg) {
       const { head: request_head, type: operation, data: params } = request_msg
       let result
 
@@ -3305,14 +3363,7 @@ async function boot () {
       send_response(request_head, result)
 
       function send_response (request_head, result) {
-        // Create standardized response message
-        const response_head = ['page_js', 'graph_explorer', page_js_mid++]
-        send({
-          head: response_head,
-          refs: { cause: request_head }, // Reference the original request
-          type: 'db_response',
-          data: { result }
-        })
+        _.graph_explorer('db_response', { cause: request_head }, { result })
       }
     }
   }
@@ -3321,24 +3372,30 @@ async function boot () {
     if (!data || data[0] == null) {
       console.error('Entries data is missing or empty.')
       db = graphdb({})
-      if (send_to_graph_explorer) {
-        send_to_graph_explorer({ type: 'db_initialized', data: { entries: {} } })
-      }
+      latest_entries = {}
+      notify_db_initialized({})
       return
     }
     const parsed_data = typeof data[0] === 'string' ? JSON.parse(data[0]) : data[0]
     if (typeof parsed_data !== 'object' || !parsed_data) {
       console.error('Parsed entries data is not a valid object.')
       db = graphdb({})
-      if (send_to_graph_explorer) {
-        send_to_graph_explorer({ type: 'db_initialized', data: { entries: {} } })
-      }
+      latest_entries = {}
+      notify_db_initialized({})
       return
     }
     db = graphdb(parsed_data)
-    if (send_to_graph_explorer) {
-      send_to_graph_explorer({ type: 'db_initialized', data: { entries: parsed_data } })
-    }
+    latest_entries = parsed_data
+    notify_db_initialized(parsed_data)
+  }
+
+  function notify_db_initialized (entries) {
+    if (!graph_explorer_connected) return
+    _.graph_explorer('db_initialized', {}, { entries })
+  }
+
+  function sync_initial_state_to_child () {
+    if (latest_entries !== null) notify_db_initialized(latest_entries)
   }
 
   async function onbatch (batch) {
@@ -3370,7 +3427,8 @@ function fallback_module () {
           undo: 'undo'
         }
       },
-      '../lib/graphdb': 0
+      '../lib/graphdb': 0,
+      '../lib/net_helper': { $: '' }
     },
     drive: {
       'theme/': { 'style.css': { raw: "body { font-family: 'system-ui'; }" } },
@@ -3386,4 +3444,4 @@ function fallback_module () {
 }
 
 }).call(this)}).call(this,"/web/page.js")
-},{"..":1,"../lib/graphdb":2,"STATE":3}]},{},[4]);
+},{"..":1,"../lib/graphdb":2,"../lib/net_helper":3,"STATE":4}]},{},[5]);
