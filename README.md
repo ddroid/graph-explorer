@@ -6,18 +6,23 @@ A lightweight, high-performance frontend component for rendering and exploring i
 
 - **Virtual Scrolling:** Renders only the visible nodes, ensuring smooth scrolling and interaction even with very large graphs.
 - **Interactive Exploration:** Allows users to expand and collapse both hierarchical children (`subs`) and related connections (`hubs`).
-- **Standard Protocol:** Implements the standard bidirectional message-based communication protocol for seamless integration.
+- **net_helper Protocol:** Uses the standard `net_helper` invite/accept protocol for seamless integration.
 - **Drive-based Data Flow:** Uses the drive system for efficient data management and real-time updates.
 
 ## Quick Start
 
-The graph explorer requires data to be supplied through a drive system and communicates via the standard protocol:
+The graph explorer requires data to be supplied through a drive system and communicates through a `net_helper` invite from its parent:
 
 ```javascript
+const net = require('net_helper')
 const graph_explorer = require('graph-explorer')
 
-// Provide `opts` and optional `protocol` as parameters
-const graph = await graph_explorer(opts, protocol)
+const { io, _ } = net(id)
+io.on = {
+  graph_explorer: on_graph_explorer_message
+}
+
+const graph = await graph_explorer(opts, io.invite('graph_explorer', { up: id }))
 
 // Append the element to your application's body or another container
 document.body.appendChild(graph)
@@ -26,11 +31,11 @@ For detailed usage instructions, see [USAGE.md](./guide/USAGE.md).
 
 ## Protocol System
 
-The graph explorer implements the **standard bidirectional message-based communication protocol** that allows parent modules to:
+The graph explorer implements the **standard `net_helper` bidirectional message protocol** that allows parent modules to:
 - Control the graph explorer programmatically (change modes, select nodes, expand/collapse, etc.)
 - Receive notifications about user interactions and state changes
 
-All messages follow the standard format:
+All routed messages are created by `net_helper` and follow the standard format:
 ```javascript
 {
   head: [sender_id, receiver_id, message_id],
@@ -38,6 +43,13 @@ All messages follow the standard format:
   type: "message_type",
   data: { ... }
 }
+```
+
+Do not construct `head` or `meta` manually. Send through channel helpers:
+
+```javascript
+_.graph_explorer('set_mode', {}, { mode: 'search' })
+_.graph_explorer('db_response', { cause: request_msg.head }, { result })
 ```
 
 For complete protocol documentation, see [PROTOCOL.md](./guide/PROTOCOL.md).
@@ -56,15 +68,15 @@ The graph explorer uses a drive-based data system for efficient data management:
 
 ### Data Integration Pattern
 
-The recommended approach is to use the `graph_explorer` which handles:
+The recommended approach is to use the `graph_explorer` component behind a parent-owned graph database. The component handles:
 - Drive data watching and processing
-- Protocol communication setup
-- Database initialization
+- net_helper communication setup
 - Message routing between parent and graph explorer
 
 ```javascript
+const net = require('net_helper')
 const graph_explorer = require('graph-explorer')
-const graph = await graph_explorer(opts, protocol)
+const graph = await graph_explorer(opts, io.invite('graph_explorer', { up: id }))
 ```
 
 ### 1. `entries`

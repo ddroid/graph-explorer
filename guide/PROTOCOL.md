@@ -1,359 +1,245 @@
 # Graph Explorer Protocol System
 
-The `graph_explorer` module implements a standard bidirectional message-based communication protocol that allows parent modules to control the graph explorer and receive notifications after the requested message was processed.
-
-## Usage
-
-When initializing the graph explorer, pass a protocol function as the second parameter:
+The `graph_explorer` module communicates through `net_helper`. Its public API is:
 
 ```javascript
-const _ = {} // Store the send function to communicate with graph_explorer
 const graph_explorer = require('graph-explorer')
 
-const element = await graph_explorer(opts, protocol)
+const element = await graph_explorer(opts, invite)
+```
 
-function protocol (send) {
-  // Store the send function to communicate with graph_explorer
-  _.graph_send = send
-  
-  // Return a message handler function
-  return onmessage
-  
-  function onmessage (msg) {
-    const { head, refs, type, data } = msg
-    // Handle messages from graph_explorer
-    switch (type) {
-      case 'node_clicked':
-        console.log('Node clicked:', data.instance_path)
-        break
-      case 'selection_changed':
-        console.log('Selection changed:', data.selected)
-        break
-      // ... handle other message types
-    }
-  }
+The parent creates the invite and handles messages from Graph Explorer:
+
+```javascript
+const net = require('net_helper')
+const graph_explorer = require('graph-explorer')
+
+const { io, _ } = net(id)
+io.on = {
+  graph_explorer: on_graph_explorer_message
+}
+
+const element = await graph_explorer(opts, io.invite('graph_explorer', { up: id }))
+
+function on_graph_explorer_message (msg) {
+  if (msg.type.startsWith('db_')) return handle_db_request(msg)
+  console.log('graph explorer event:', msg.type, msg.data)
 }
 ```
 
 ## Message Structure
 
-All messages follow the standard protocol format:
+All routed messages are created by `net_helper`:
 
 ```javascript
 {
   head: [sender_id, receiver_id, message_id],
   refs: { cause: parent_message_head },
-  type: "message_type",
-  data: { ... }
+  type: 'message_type',
+  data: { ... },
+  meta: {
+    time,
+    stack
+  }
 }
 ```
 
-- `head`: `[from, to, id]` - Unique message identifier
-- `refs`: reference to cause (empty `{}` for user events)
-- `type`: Message type string
-- `data`: Message payload
+- `head` is created by `net_helper` and identifies the message.
+- `refs` is supplied by the caller. Use `{}` for root/user events and `{ cause: msg.head }` for caused messages.
+- `type` is the command, event, or database operation name.
+- `data` is the payload.
+- `meta` is created by `net_helper`.
 
-## Incoming Messages (Parent → Graph Explorer)
+Do not manually construct `{ head, refs, type, data }`. Send through channel helpers:
 
-These messages can be sent to the graph explorer to control its behavior:
-
-### `set_mode`
-Change the current display mode.
-
-**Data:**
-- `mode` (String): One of `'default'`, `'menubar'`, or `'search'`
-
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'set_mode', 
-  data: { mode: 'search' }
-})
+_.graph_explorer('set_mode', {}, { mode: 'search' })
+_.graph_explorer('db_response', { cause: request_msg.head }, { result })
 ```
 
-### `set_search_query`
-Set the search query (automatically switches to search mode if not already).
+Graph Explorer sends upward with `_.up(type, refs, data)`.
 
-**Data:**
-- `query` (String): The search query string
+## Database Contract
 
-**Example:**
+Graph Explorer does not own graph data. The parent/wrapper/page owns the graph database and responds to `db_*` requests.
+
+Graph Explorer sends:
+
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'set_search_query', 
-  data: { query: 'my search' }
-})
+_.up('db_get', {}, { path: '/src/index.js' })
+_.up('db_has', {}, { path: '/' })
+_.up('db_is_empty', {}, {})
+_.up('db_root', {}, {})
+_.up('db_keys', {}, {})
+_.up('db_raw', {}, {})
+```
+
+The parent sends responses with the request head as the cause:
+
+```javascript
+_.graph_explorer('db_response', { cause: request_msg.head }, { result })
+```
+
+The response payload stays:
+
+```javascript
+{ result: any | null }
+```
+
+Use `null` for unavailable data, unknown operations, and missing paths. The parent may log errors locally, but the wire contract remains `{ result }`.
+
+The parent also initializes the graph:
+
+```javascript
+_.graph_explorer('db_initialized', {}, { entries })
+```
+
+## Incoming Messages: Parent -> Graph Explorer
+
+These messages can be sent with `_.graph_explorer(type, refs, data)`.
+
+### `set_mode`
+
+Change the current display mode.
+
+```javascript
+_.graph_explorer('set_mode', {}, { mode: 'search' })
+```
+
+`mode` must be one of `'default'`, `'menubar'`, or `'search'`.
+
+### `set_search_query`
+
+Set the search query.
+
+```javascript
+_.graph_explorer('set_search_query', {}, { query: 'my search' })
 ```
 
 ### `select_nodes`
-Programmatically select specific nodes.
 
-**Data:**
-- `instance_paths` (Array<String>): Array of instance paths to select - More about Instance paths will be defined at the end of this file
+Programmatically select nodes.
 
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'select_nodes', 
-  data: { instance_paths: ['|/', '|/src'] }
-})
+_.graph_explorer('select_nodes', {}, { instance_paths: ['|/', '|/src'] })
 ```
 
 ### `expand_node`
-Expand a specific node's children and/or hubs.
 
-**Data:**
-- `instance_path` (String): The instance path of the node to expand
-- `expand_subs` (Boolean, optional): Whether to expand children (default: true)
-- `expand_hubs` (Boolean, optional): Whether to expand hubs (default: false)
+Expand a node's children and/or hubs.
 
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'expand_node', 
-  data: { instance_path: '|/', expand_subs: true, expand_hubs: true }
+_.graph_explorer('expand_node', {}, {
+  instance_path: '|/',
+  expand_subs: true,
+  expand_hubs: true
 })
 ```
 
 ### `collapse_node`
-Collapse a specific node's children and hubs.
 
-**Data:**
-- `instance_path` (String): The instance path of the node to collapse
+Collapse a node.
 
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'collapse_node', 
-  data: { instance_path: '|/src' }
-})
+_.graph_explorer('collapse_node', {}, { instance_path: '|/src' })
 ```
 
 ### `toggle_node`
-Toggle expansion state of a node.
 
-**Data:**
-- `instance_path` (String): The instance path of the node to toggle
-- `toggle_type` (String, optional): Either `'subs'` or `'hubs'` (default: `'subs'`)
+Toggle a node's expansion state.
 
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'toggle_node', 
-  data: { instance_path: '|/src', toggle_type: 'subs' }
+_.graph_explorer('toggle_node', {}, {
+  instance_path: '|/src',
+  toggle_type: 'subs'
 })
 ```
+
+`toggle_type` is `'subs'` or `'hubs'`.
 
 ### `get_selected`
-Request the current selection state.
 
-**Data:** None (empty object)
+Request current selected nodes.
 
-**Response:** Triggers a `selected_nodes` message
-
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'get_selected', 
-  data: {}
-})
+_.graph_explorer('get_selected', {}, {})
 ```
+
+Graph Explorer responds with `selected_nodes`.
 
 ### `get_confirmed`
-Request the current confirmed selection state.
 
-**Data:** None (empty object)
+Request current confirmed nodes.
 
-**Response:** Triggers a `confirmed_nodes` message
-
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'get_confirmed', 
-  data: {}
-})
+_.graph_explorer('get_confirmed', {}, {})
 ```
 
+Graph Explorer responds with `confirmed_nodes`.
+
 ### `clear_selection`
-Clear all selected and confirmed nodes.
 
-**Data:** None (empty object)
+Clear selected and confirmed nodes.
 
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'clear_selection', 
-  data: {}
-})
+_.graph_explorer('clear_selection', {}, {})
 ```
 
 ### `set_flag`
+
 Set a configuration flag.
 
-**Data:**
-- `flag_type` (String): One of `'hubs'`, `'selection'`, or `'recursive_collapse'`
-- `value` (String|Boolean): The flag value
-  - For `'hubs'`: `'default'`, `'true'`, or `'false'`
-  - For `'selection'`: Boolean
-  - For `'recursive_collapse'`: Boolean
-
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'set_flag', 
-  data: { flag_type: 'hubs', value: 'true' }
+_.graph_explorer('set_flag', {}, {
+  flag_type: 'hubs',
+  value: 'true'
 })
 ```
+
+`flag_type` is one of `'hubs'`, `'selection'`, or `'recursive_collapse'`.
 
 ### `scroll_to_node`
-Scroll to a specific node in the view.
 
-**Data:**
-- `instance_path` (String): The instance path of the node to scroll to
+Scroll to a node in the view.
 
-**Example:**
 ```javascript
-graph_send({ 
-  head: [by, to, mid++], 
-  refs: {}, 
-  type: 'scroll_to_node', 
-  data: { instance_path: '|/src/index.js' }
+_.graph_explorer('scroll_to_node', {}, {
+  instance_path: '|/src/index.js'
 })
 ```
 
-## Outgoing Messages (Graph Explorer → Parent)
+## Outgoing Messages: Graph Explorer -> Parent
 
-These messages are sent by the graph explorer to notify the parent module of events. They follow the same standard protocol format:
+Graph Explorer sends these through `_.up(type, refs, data)`.
 
-### `node_clicked`
-Fired when a node is clicked.
-
-**Data:**
-- `instance_path` (String): The instance path of the clicked node
-
-### `selection_changed`
-Fired when the selection state changes.
-
-**Data:**
-- `selected` (Array<String>): Array of currently selected instance paths
-
-### `subs_toggled`
-Fired when a node's children are expanded or collapsed.
-
-**Data:**
-- `instance_path` (String): The instance path of the toggled node
-- `expanded` (Boolean): Whether the children are now expanded
-
-### `hubs_toggled`
-Fired when a node's hubs are expanded or collapsed.
-
-**Data:**
-- `instance_path` (String): The instance path of the toggled node
-- `expanded` (Boolean): Whether the hubs are now expanded
-
-### `mode_toggling`
-Fired when the mode is about to change.
-
-**Data:**
-- `from` (String): The current mode
-- `to` (String): The target mode
-
-### `mode_changed`
-Fired when the mode has changed.
-
-**Data:**
-- `mode` (String): The new mode
-
-### `search_query_changed`
-Fired when the search query changes.
-
-**Data:**
-- `query` (String): The new search query
-
-### `node_expanded`
-Fired in response to an `expand_node` command.
-
-**Data:**
-- `instance_path` (String): The expanded node's instance path
-- `expand_subs` (Boolean): Whether children were expanded
-- `expand_hubs` (Boolean): Whether hubs were expanded
-
-### `node_collapsed`
-Fired in response to a `collapse_node` command.
-
-**Data:**
-- `instance_path` (String): The collapsed node's instance path
-
-### `node_toggled`
-Fired in response to a `toggle_node` command.
-
-**Data:**
-- `instance_path` (String): The toggled node's instance path
-- `toggle_type` (String): Either `'subs'` or `'hubs'`
-
-### `selected_nodes`
-Fired in response to a `get_selected` command.
-
-**Data:**
-- `selected` (Array<String>): Array of currently selected instance paths
-
-### `confirmed_nodes`
-Fired in response to a `get_confirmed` command.
-
-**Data:**
-- `confirmed` (Array<String>): Array of currently confirmed instance paths
-
-### `selection_cleared`
-Fired in response to a `clear_selection` command.
-
-**Data:** Empty object
-
-### `flag_changed`
-Fired in response to a `set_flag` command.
-
-**Data:**
-- `flag_type` (String): The flag that was changed
-- `value` (String|Boolean): The new flag value
-
-### `scrolled_to_node`
-Fired in response to a `scroll_to_node` command.
-
-**Data:**
-- `instance_path` (String): The node that was scrolled to
-- `scroll_position` (Number): The scroll position in pixels
+- `node_clicked`: `{ instance_path }`
+- `selection_changed`: `{ selected }`
+- `subs_toggled`: `{ instance_path, expanded }`
+- `hubs_toggled`: `{ instance_path, expanded }`
+- `mode_toggling`: `{ from, to }`
+- `mode_changed`: `{ mode }`
+- `search_query_changed`: `{ query }`
+- `node_expanded`: `{ instance_path, expand_subs, expand_hubs }`
+- `node_collapsed`: `{ instance_path }`
+- `node_toggled`: `{ instance_path, toggle_type }`
+- `selected_nodes`: `{ selected }`
+- `confirmed_nodes`: `{ confirmed }`
+- `selection_cleared`: `{}`
+- `flag_changed`: `{ flag_type, value }`
+- `scrolled_to_node`: `{ instance_path, scroll_position }`
 
 ## Instance Paths
 
 Instance paths uniquely identify a node in the graph, including its position in the hierarchy. They follow the format:
 
-```
+```text
 |/path/to/node
 ```
 
-For example:
+Examples:
+
 - Root: `|/`
 - First-level child: `|/src`
 - Nested child: `|/src|/src/index.js`
 
-The pipe character (`|`) separates hierarchy levels, allowing the same base path to appear multiple times in different contexts (e.g., when a node is referenced as both a child and a hub).
-
+The pipe character (`|`) separates hierarchy levels, allowing the same base path to appear multiple times in different contexts.
