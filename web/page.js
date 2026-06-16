@@ -69,7 +69,7 @@ async function boot () {
   // ELEMENTS
   // ----------------------------------------
   // desktop
-  const graph_explorer_el = await app(subs[0], io.invite('graph_explorer', { up: id }))
+  const graph_explorer_el = await app(subs[0], io.invite('graph_explorer', { storage: id }))
   graph_explorer_connected = true
   sync_initial_state_to_child()
   shadow.append(graph_explorer_el)
