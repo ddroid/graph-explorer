@@ -1,7 +1,7 @@
 // =============================================================================
 // GRAPH EXPLORER WRAPPER - COMMENTED EXAMPLE
 // =============================================================================
-// Mirrors the current ui-components graph_explorer_wrapper.
+// Mirrors the current ui-components graph_viewer.
 //
 // The wrapper owns graphdb, invites graph_explorer through net_helper, answers
 // db_* requests, forwards child events upward, and queues parent commands until
@@ -15,14 +15,14 @@ const net = require('net_helper')
 const graph_explorer = require('graph-explorer')
 const graphdb = require('./graphdb')
 
-module.exports = graph_explorer_wrapper
+module.exports = graph_viewer
 
 // =============================================================================
 // MAIN COMPONENT FUNCTION
 // =============================================================================
 // A STATE component that mounts graph_explorer as a child and acts as the
 // protocol boundary between the app and Graph Explorer.
-async function graph_explorer_wrapper (opts, invite) {
+async function graph_viewer (opts, invite) {
   // ---------------------------------------------------------------------------
   // 1. Component setup
   // ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ async function graph_explorer_wrapper (opts, invite) {
     // Graph Explorer db API: db_* request in, db_response out.
     const { head: request_head, type: operation, data: params } = request_msg
     if (!db) {
-      console.error('[graph_explorer_wrapper] Database not initialized yet')
+      console.error('[graph_viewer] Database not initialized yet')
       send_response(request_head, null)
       return
     }
@@ -290,7 +290,7 @@ async function graph_explorer_wrapper (opts, invite) {
     send_response(request_head, result)
 
     function db_fail () {
-      console.warn('[graph_explorer_wrapper] Unknown db operation:', operation)
+      console.warn('[graph_viewer] Unknown db operation:', operation)
       send_response(request_head, null)
     }
   }
