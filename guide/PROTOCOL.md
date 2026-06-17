@@ -19,7 +19,7 @@ io.on = {
   graph_explorer: on_graph_explorer_message
 }
 
-const element = await graph_explorer(opts, io.invite('graph_explorer', { up: id }))
+const element = await graph_explorer(opts, io.invite('graph_explorer', { storage: id }))
 
 function on_graph_explorer_message (msg) {
   if (msg.type.startsWith('db_')) return handle_db_request(msg)
@@ -57,7 +57,7 @@ _.graph_explorer('set_mode', {}, { mode: 'search' })
 _.graph_explorer('db_response', { cause: request_msg.head }, { result })
 ```
 
-Graph Explorer sends upward with `_.up(type, refs, data)`.
+Graph Explorer sends upward with `_.storage(type, refs, data)`.
 
 ## Database Contract
 
@@ -66,12 +66,12 @@ Graph Explorer does not own graph data. The parent/wrapper/page owns the graph d
 Graph Explorer sends:
 
 ```javascript
-_.up('db_get', {}, { path: '/src/index.js' })
-_.up('db_has', {}, { path: '/' })
-_.up('db_is_empty', {}, {})
-_.up('db_root', {}, {})
-_.up('db_keys', {}, {})
-_.up('db_raw', {}, {})
+_.storage('db_get', {}, { path: '/src/index.js' })
+_.storage('db_has', {}, { path: '/' })
+_.storage('db_is_empty', {}, {})
+_.storage('db_root', {}, {})
+_.storage('db_keys', {}, {})
+_.storage('db_raw', {}, {})
 ```
 
 The parent sends responses with the request head as the cause:
@@ -210,7 +210,7 @@ _.graph_explorer('scroll_to_node', {}, {
 
 ## Outgoing Messages: Graph Explorer -> Parent
 
-Graph Explorer sends these through `_.up(type, refs, data)`.
+Graph Explorer sends these through `_.storage(type, refs, data)`.
 
 - `node_clicked`: `{ instance_path }`
 - `selection_changed`: `{ selected }`

@@ -79,7 +79,7 @@ async function graph_explorer_wrapper (opts, invite) {
   const subs = await sdb.watch(onbatch)
 
   // Hard-switch API: graph_explorer receives a net_helper invite.
-  const explorer_el = await graph_explorer(subs[0], io.invite('graph_explorer', { up: id }))
+  const explorer_el = await graph_explorer(subs[0], io.invite('graph_explorer', { storage: id }))
   graph_explorer_connected = true
 
   // Replay already-loaded entries after child channel setup.
@@ -237,7 +237,7 @@ async function graph_explorer_wrapper (opts, invite) {
   // ---------------------------------------------------------------------------
   // 6. Graph Explorer -> wrapper messages
   // ---------------------------------------------------------------------------
-  // Handles child messages sent with _.up(...).
+  // Handles child messages sent with _.storage(...).
   function graph_explorer_protocol (msg) {
     const { type } = msg
 

@@ -22,7 +22,7 @@ io.on = {
   graph_explorer: on_graph_explorer_message
 }
 
-const graph = await graph_explorer(opts, io.invite('graph_explorer', { up: id }))
+const graph = await graph_explorer(opts, io.invite('graph_explorer', { storage: id }))
 
 // Append the element to your application's body or another container
 document.body.appendChild(graph)
@@ -76,7 +76,7 @@ The recommended approach is to use the `graph_explorer` component behind a paren
 ```javascript
 const net = require('net_helper')
 const graph_explorer = require('graph-explorer')
-const graph = await graph_explorer(opts, io.invite('graph_explorer', { up: id }))
+const graph = await graph_explorer(opts, io.invite('graph_explorer', { storage: id }))
 ```
 
 ### 1. `entries`

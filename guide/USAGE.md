@@ -108,7 +108,7 @@ async function my_component_with_graph (opts, invite) {
   shadow.adoptedStyleSheets = [sheet]
 
   const subs = await sdb.watch(onbatch)
-  const explorer_el = await graph_explorer(subs[0], io.invite('graph_explorer', { up: id }))
+  const explorer_el = await graph_explorer(subs[0], io.invite('graph_explorer', { storage: id }))
   graph_explorer_connected = true
   sync_initial_state_to_child()
   shadow.append(explorer_el)
