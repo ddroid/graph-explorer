@@ -58,7 +58,7 @@ async function graph_explorer (opts, invite) {
 
   const { io, _ } = net(id)
   io.on = {
-    up: onmessage
+    storage: onmessage
   }
   if (!invite || typeof invite !== 'function') throw new Error('graph_explorer requires a net_helper invite')
   io.accept(invite)
@@ -269,8 +269,8 @@ async function graph_explorer (opts, invite) {
     }
   }
   function send_message ({ type, refs = {}, data = {} }) {
-    if (!_.up) throw new Error('graph_explorer net_helper channel "up" is not connected')
-    return _.up(type, refs, data)
+    if (!_.storage) throw new Error('graph_explorer net_helper channel "storage" is not connected')
+    return _.storage(type, refs, data)
   }
 
   function create_db () {

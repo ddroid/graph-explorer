@@ -46,12 +46,12 @@ async function graph_viewer (opts, invite) {
   // ---------------------------------------------------------------------------
   // net(id) returns io for wiring and _ for channel sends.
   //
-  // accept(parent invite) creates _.up(...).
+  // accept(parent invite) creates _.storage(...).
   // invite('graph_explorer') creates _.graph_explorer(...).
   const { io, _ } = net(id)
   io.on = {
     // Parent -> wrapper.
-    up: onmessage,
+    storage: onmessage,
 
     // Graph Explorer -> wrapper.
     graph_explorer: graph_explorer_protocol
@@ -258,8 +258,8 @@ async function graph_viewer (opts, invite) {
 
   function send_parent_message (type, refs = {}, data = {}) {
     // Wrapper -> parent is only available when the wrapper received an invite.
-    if (!_.up) return
-    return _.up(type, refs, data)
+    if (!_.storage) return
+    return _.storage(type, refs, data)
   }
 
   function sync_initial_state_to_child () {

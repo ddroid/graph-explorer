@@ -92,7 +92,7 @@ async function my_component_with_graph (opts, invite) {
   let graph_explorer_connected = false
 
   io.on = {
-    up: onmessage,
+    storage: onmessage,
     graph_explorer: graph_explorer_protocol
   }
   if (invite) io.accept(invite)
@@ -161,8 +161,8 @@ async function my_component_with_graph (opts, invite) {
   }
 
   function send_parent_message (type, refs = {}, data = {}) {
-    if (!_.up) return
-    return _.up(type, refs, data)
+    if (!_.storage) return
+    return _.storage(type, refs, data)
   }
 
   async function onbatch (batch) {
