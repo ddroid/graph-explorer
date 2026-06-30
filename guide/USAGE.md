@@ -123,7 +123,7 @@ async function my_component_with_graph (opts, invite) {
 
   function graph_explorer_protocol (msg) {
     if (msg.type.startsWith('db_')) return handle_db_request(msg)
-    _.up(msg.type, msg.head ? { cause: msg.head } : {}, msg.data)
+    send_parent_message(msg.type, msg.head ? { cause: msg.head } : {}, msg.data)
   }
 
   function handle_db_request (request_msg) {
@@ -152,7 +152,17 @@ async function my_component_with_graph (opts, invite) {
   }
 
   function send_response (request_head, result) {
-    _.graph_explorer('db_response', { cause: request_head }, { result })
+    send_child_message('db_response', { cause: request_head }, { result })
+  }
+
+  function send_child_message (type, refs = {}, data = {}) {
+    if (!_.graph_explorer) throw new Error('my_component net_helper channel "graph_explorer" is not connected')
+    return _.graph_explorer(type, refs, data)
+  }
+
+  function send_parent_message (type, refs = {}, data = {}) {
+    if (!_.up) return
+    return _.up(type, refs, data)
   }
 
   async function onbatch (batch) {
@@ -196,7 +206,7 @@ async function my_component_with_graph (opts, invite) {
 
   function notify_db_initialized (entries) {
     if (!graph_explorer_connected) return
-    _.graph_explorer('db_initialized', {}, { entries })
+    send_child_message('db_initialized', {}, { entries })
   }
 
   function sync_initial_state_to_child () {

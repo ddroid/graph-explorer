@@ -229,7 +229,7 @@ async function graph_viewer (opts, invite) {
     if (!graph_explorer_connected) return
 
     // net_helper creates head/meta; do not build messages manually.
-    _.graph_explorer('db_initialized', {}, { entries })
+    send_child_message('db_initialized', {}, { entries })
     graph_explorer_db_ready = true
     flush_to_graph_explorer_queue()
   }
@@ -246,13 +246,20 @@ async function graph_viewer (opts, invite) {
       handle_db_request(msg)
     } else {
       // Forward child events upward and preserve causality.
-      _.up(msg.type, msg.head ? { cause: msg.head } : {}, msg.data)
+      send_parent_message(msg.type, msg.head ? { cause: msg.head } : {}, msg.data)
     }
   }
 
   function send_child_message (type, refs = {}, data = {}) {
     // Wrapper -> child sends always use the channel helper.
+    if (!_.graph_explorer) throw new Error('graph_explorer_wrapper net_helper channel "graph_explorer" is not connected')
     return _.graph_explorer(type, refs, data)
+  }
+
+  function send_parent_message (type, refs = {}, data = {}) {
+    // Wrapper -> parent is only available when the wrapper received an invite.
+    if (!_.up) return
+    return _.up(type, refs, data)
   }
 
   function sync_initial_state_to_child () {

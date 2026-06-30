@@ -60,7 +60,7 @@ async function graph_explorer (opts, invite) {
   io.on = {
     up: onmessage
   }
-  if (!invite) throw new Error('graph_explorer requires a net_helper invite')
+  if (!invite || typeof invite !== 'function') throw new Error('graph_explorer requires a net_helper invite')
   io.accept(invite)
 
   // Create db object that communicates via protocol messages
@@ -269,7 +269,8 @@ async function graph_explorer (opts, invite) {
     }
   }
   function send_message ({ type, refs = {}, data = {} }) {
-    return _.storage(type, refs, data)
+    if (!_.up) throw new Error('graph_explorer net_helper channel "up" is not connected')
+    return _.up(type, refs, data)
   }
 
   function create_db () {
@@ -3181,28 +3182,25 @@ function graphdb (entries) {
 (function (__filename){(function (){
 module.exports = net
 
-function net (id) {
-  const [label, io, _, sub, hub] = [`[${id}@${__filename}]`, { invite, accept, on: {} }, {}, {}, {}]
+function net(id) {
+  const [label, _, sub, hub] = [`[${id}@${__filename}]`, {}, {}, {}]
+  const io = { invite, accept, on: {} }
   return { io, _ }
-  function forward (to, M) {
-    if (to.startsWith(id)) {
-      const ups = [...new Set(Object.keys(hub).map(id => hub[id].tx))]
-      for (const tx of ups) tx(M)
-      return
-    }
+  function forward(to, M) {
     for (const id of Object.keys(sub)) if (to.startsWith(id)) return sub[id].tx(M)
-    throw new Error(`${label} unknown recipient "${to}"`)
+    for (const id of Object.keys(hub)) if (to.startsWith(id)) hub[id].tx(M)
+    console.error(`[id] ${label} - cant forward to unknown recipient "${to}"`)
   }
-  function invite (name, ids) {
+  function invite(name, ids) {
     if (!io.on[name]) throw new Error(`${label} no protocol handler for "${name}"`)
     return Object.assign(invite, { ids })
-    function invite (tx) {
+    function invite(tx) {
       const rx = router(sub)
       add(name, tx, tx.id, rx, sub)
       return rx
     }
   }
-  function accept (invite) {
+  function accept(invite) {
     const rx = router(hub)
     const tx = invite(Object.assign(rx, { id }))
     for (const [name, to] of Object.entries(invite.ids)) {
@@ -3211,10 +3209,10 @@ function net (id) {
       add(name, tx, to, rx, hub)
     }
   }
-  function router ($) {
-    return function rx (M) {
-      const { head: [by, to] } = M
-      console.log(`[M]\n${by} \n to: \n ${to}`, M)
+  function router($) {
+    return function rx(M) {
+      const { head: [by, to, mid] } = M
+      console.log(`[by] ${by}\n[to] ${to}\n[id]`, M)
       if (to !== id) return forward(to, M)
       if (!$[by]) throw new Error(`${label} unknown sender "${by}"`)
       const { name } = $[by].state
@@ -3222,11 +3220,12 @@ function net (id) {
       io.on[name](M)
     }
   }
-  function add (name, tx, to, rx, $) {
+  function add(name, tx, to, rx, $) {
+    if (_[name]) throw new Error(`${label} petname "${name}" is already in use`)
     const state = { name, to, mid: 0 }
     _[name] = send
     $[to] = { rx, tx, state }
-    function send (type, refs = {}, data = null) {
+    function send(type, refs = {}, data = null) {
       const head = [id, to, state.mid++]
       const meta = { time: Date.now(), stack: (new Error().stack) }
       tx({ head, refs, type, data, meta })
@@ -3363,7 +3362,7 @@ async function boot () {
       send_response(request_head, result)
 
       function send_response (request_head, result) {
-        _.graph_explorer('db_response', { cause: request_head }, { result })
+        send_graph_explorer_message('db_response', { cause: request_head }, { result })
       }
     }
   }
@@ -3391,11 +3390,16 @@ async function boot () {
 
   function notify_db_initialized (entries) {
     if (!graph_explorer_connected) return
-    _.graph_explorer('db_initialized', {}, { entries })
+    send_graph_explorer_message('db_initialized', {}, { entries })
   }
 
   function sync_initial_state_to_child () {
     if (latest_entries !== null) notify_db_initialized(latest_entries)
+  }
+
+  function send_graph_explorer_message (type, refs = {}, data = {}) {
+    if (!_.graph_explorer) throw new Error('page.js net_helper channel "graph_explorer" is not connected')
+    return _.graph_explorer(type, refs, data)
   }
 
   async function onbatch (batch) {
