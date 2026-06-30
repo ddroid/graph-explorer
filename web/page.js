@@ -121,7 +121,7 @@ async function boot () {
       send_response(request_head, result)
 
       function send_response (request_head, result) {
-        _.graph_explorer('db_response', { cause: request_head }, { result })
+        send_graph_explorer_message('db_response', { cause: request_head }, { result })
       }
     }
   }
@@ -149,11 +149,16 @@ async function boot () {
 
   function notify_db_initialized (entries) {
     if (!graph_explorer_connected) return
-    _.graph_explorer('db_initialized', {}, { entries })
+    send_graph_explorer_message('db_initialized', {}, { entries })
   }
 
   function sync_initial_state_to_child () {
     if (latest_entries !== null) notify_db_initialized(latest_entries)
+  }
+
+  function send_graph_explorer_message (type, refs = {}, data = {}) {
+    if (!_.graph_explorer) throw new Error('page.js net_helper channel "graph_explorer" is not connected')
+    return _.graph_explorer(type, refs, data)
   }
 
   async function onbatch (batch) {
