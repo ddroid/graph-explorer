@@ -259,3 +259,11 @@ Keybinds can be customized by updating the `keybinds/navigation.json` file in th
 - Modifier keys: `Control+`, `Alt+`, `Shift+`
 - Can combine multiple modifiers: `Control+Shift+Key`
 - Key names follow standard JavaScript `event.key` values
+- Currently users can navigate nodes using ArrowUp and ArrowDown.
+
+It would improve accessibility and navigation speed if users could:
+
+- Press Home to jump to the first visible node
+- Press End to jump to the last visible node
+
+This is especially useful when working with large graphs containing thousands of nodes.
