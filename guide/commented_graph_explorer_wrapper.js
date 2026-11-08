@@ -46,12 +46,12 @@ async function graph_viewer (opts, invite) {
   // ---------------------------------------------------------------------------
   // net(id) returns io for wiring and _ for channel sends.
   //
-  // accept(parent invite) creates _.storage(...).
+  // accept(parent invite) creates _.up(...).
   // invite('graph_explorer') creates _.graph_explorer(...).
   const { io, _ } = net(id)
   io.on = {
     // Parent -> wrapper.
-    storage: onmessage,
+    up: onmessage,
 
     // Graph Explorer -> wrapper.
     graph_explorer: graph_explorer_protocol
@@ -79,7 +79,7 @@ async function graph_viewer (opts, invite) {
   const subs = await sdb.watch(onbatch)
 
   // Hard-switch API: graph_explorer receives a net_helper invite.
-  const explorer_el = await graph_explorer(subs[0], io.invite('graph_explorer', { storage: id }))
+  const explorer_el = await graph_explorer(subs[0], io.invite('graph_explorer', { up: id }))
   graph_explorer_connected = true
 
   // Replay already-loaded entries after child channel setup.
@@ -237,7 +237,7 @@ async function graph_viewer (opts, invite) {
   // ---------------------------------------------------------------------------
   // 6. Graph Explorer -> wrapper messages
   // ---------------------------------------------------------------------------
-  // Handles child messages sent with _.storage(...).
+  // Handles child messages sent with _.up(...).
   function graph_explorer_protocol (msg) {
     const { type } = msg
 
@@ -258,8 +258,8 @@ async function graph_viewer (opts, invite) {
 
   function send_parent_message (type, refs = {}, data = {}) {
     // Wrapper -> parent is only available when the wrapper received an invite.
-    if (!_.storage) return
-    return _.storage(type, refs, data)
+    if (!_.up) return
+    return _.up(type, refs, data)
   }
 
   function sync_initial_state_to_child () {

@@ -58,7 +58,7 @@ async function graph_explorer (opts, invite) {
 
   const { io, _ } = net(id)
   io.on = {
-    storage: onmessage
+    up: onmessage
   }
   if (!invite || typeof invite !== 'function') throw new Error('graph_explorer requires a net_helper invite')
   io.accept(invite)
@@ -269,8 +269,8 @@ async function graph_explorer (opts, invite) {
     }
   }
   function send_message ({ type, refs = {}, data = {} }) {
-    if (!_.storage) throw new Error('graph_explorer net_helper channel "storage" is not connected')
-    return _.storage(type, refs, data)
+    if (!_.up) throw new Error('graph_explorer net_helper channel "up" is not connected')
+    return _.up(type, refs, data)
   }
 
   function create_db () {
@@ -3310,7 +3310,7 @@ async function boot () {
   // ELEMENTS
   // ----------------------------------------
   // desktop
-  const graph_explorer_el = await app(subs[0], io.invite('graph_explorer', { storage: id }))
+  const graph_explorer_el = await app(subs[0], io.invite('graph_explorer', { up: id }))
   graph_explorer_connected = true
   sync_initial_state_to_child()
   shadow.append(graph_explorer_el)
